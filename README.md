@@ -15,7 +15,7 @@
 
 <br>
 
-<video src="https://github.com/user-attachments/assets/83249e27-7f63-49f9-9a53-cc62f5956bb6" width="900" controls></video>
+<img src="docs/images/hero.png" width="900" alt="Tact：不知道怎么回？按快捷键就好">
 
 </div>
 
@@ -30,6 +30,12 @@
 - **没有合适的**：提示「这次不建议」，不硬凑。
 
 它**从不替你发送**，只把字放进输入框。如果你回消息本来就快，或者不想让 AI 碰聊天内容，就不需要它。
+
+## 演示
+
+<img src="docs/images/demo.gif" width="820" alt="演示：在微信里，输入框空着时按快捷键，Tact 以灰字给出一句回复，按 Tab 采用；打「拒绝」再按快捷键，改写成得体的话，按 Tab 替换">
+
+<sub>输入框空着时按快捷键出灰字，按 Tab 采用；打「拒绝」再按快捷键，改写成得体的话。</sub>
 
 ## 快速开始
 
@@ -90,7 +96,7 @@
 TACT_SIGN_IDENTITY=- ./scripts/build-app.sh && ./scripts/build-dmg.sh   # 打包可分发的 DMG
 ```
 
-配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。演示视频用 [HyperFrames](https://github.com/heygen-com/hyperframes) 制作，源文件在 [docs/demo](docs/demo)。
+配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。演示动画用 [HyperFrames](https://github.com/heygen-com/hyperframes) 制作，源文件在 [docs/demo](docs/demo)。
 
 ## 许可证
 
