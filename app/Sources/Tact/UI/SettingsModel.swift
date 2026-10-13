@@ -109,6 +109,9 @@ final class SettingsModel: ObservableObject {
     /// engine as down before it was asked.
     @Published private(set) var statusChecked = false
     private var statusRefreshTask: Task<Void, Never>?
+    /// Set for screenshots, where neither the engine nor the permissions
+    /// are there to check.
+    private var statusHeld = false
 
     init(controller: Controller) {
         self.controller = controller
@@ -135,6 +138,7 @@ final class SettingsModel: ObservableObject {
     /// share that work instead of sending two pings.
     @discardableResult
     func refreshStatus() -> Task<Void, Never> {
+        if statusHeld { return Task {} }
         if let statusRefreshTask { return statusRefreshTask }
         let task = Task { [weak self] in
             guard let self else { return }
@@ -144,6 +148,7 @@ final class SettingsModel: ObservableObject {
             }.value
             async let response = self.controller.engineRequest(["op": "ping"], timeout: 1)
             let (permissions, ping) = await (grants, response)
+            guard !self.statusHeld else { return }
             if self.permissions != permissions { self.permissions = permissions }
             let connected = (ping?["ok"] as? Bool) == true
             if self.engineConnected != connected { self.engineConnected = connected }
@@ -151,6 +156,15 @@ final class SettingsModel: ObservableObject {
         }
         statusRefreshTask = task
         return task
+    }
+
+    /// The status of a Mac that is set up, engine running and every
+    /// permission granted, held against live checks: for screenshots.
+    func showAsSetUp() {
+        statusHeld = true
+        permissions = Dictionary(uniqueKeysWithValues: Permission.allCases.map { ($0, true) })
+        engineConnected = true
+        statusChecked = true
     }
 
     /// Writes app-side settings and applies them to the running controller.

@@ -12,3 +12,8 @@ plugins/telegram/tact-telegram
 .DS_Store
 __pycache__/
 *.pyc
+
+# HyperFrames render output
+docs/demo/.hyperframes/
+docs/demo/renders/
+docs/demo/*.mp4

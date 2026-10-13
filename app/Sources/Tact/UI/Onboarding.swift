@@ -206,7 +206,7 @@ private struct OnboardingHero: View {
             VStack(alignment: .leading, spacing: 0) {
                 AppIconImage().frame(width: 60, height: 60)
                 Text("Tact").font(Theme.display(26)).foregroundStyle(.white).padding(.top, 20)
-                Text("别人说完，回复已经\n在输入框里等你。")
+                Text("不知道怎么回？\n按快捷键就好。")
                     .font(.system(size: 13.5)).foregroundStyle(.white.opacity(0.62))
                     .lineSpacing(3).padding(.top, 8)
                 Spacer()
@@ -258,7 +258,7 @@ private struct WelcomeStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             StepTitle(eyebrow: "Tact", title: "看懂对话，\n替你起草回复",
-                      detail: "Tact 待在菜单栏里。轮到你说话时，它根据最近的聊天起草一句回复，放在输入框里等你决定。")
+                      detail: "Tact 待在菜单栏里。不知道怎么回时按快捷键，它根据最近的聊天起草一句回复，放进输入框，发不发由你决定。")
             VStack(alignment: .leading, spacing: 18) {
                 Feature(symbol: "control", title: "双击 ⌃ 生成",
                         detail: "输入框空着就起草整句回复；写了几个字，就按你的意思把话说完整")

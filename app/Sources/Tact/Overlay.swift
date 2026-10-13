@@ -253,7 +253,110 @@ final class Overlay: NSObject {
 
     func hide() {
         cancelAutoHide()
+        stopFollowing()
         panel.orderOut(nil)
+    }
+
+    // MARK: - Following a window
+
+    /// Keeps what is shown on the window of `pid` at `frame`. While the
+    /// window is dragged the overlay steps aside: another app's window
+    /// cannot carry it, and trailing a frame behind looks broken. It comes
+    /// back in place once the window is let go and still, as input method
+    /// candidates do. A resize hides it for good and runs `resized`; hiding
+    /// ends the following.
+    func follow(pid: pid_t, frame: CGRect, resized: (() -> Void)? = nil) {
+        stopFollowing()
+        guard let id = Self.windowID(pid: pid, frame: frame) else { return }
+        followed = Followed(id: id, frame: frame, resized: resized)
+        followTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.followTick() }
+        }
+    }
+
+    private struct Followed {
+        let id: CGWindowID
+        var frame: CGRect
+        let resized: (() -> Void)?
+        /// Set while the overlay is out of the way of a moving window.
+        var movedAt: Date?
+    }
+
+    private var followTimer: Timer?
+    private var followed: Followed?
+
+    enum FollowStep: Equatable {
+        case stay
+        /// The window moved by this much: hide, and shift to match.
+        case stepAside(CGVector)
+        /// The window was let go and is still: show again.
+        case comeBack
+        case resized
+    }
+
+    nonisolated static func followStep(from frame: CGRect, to now: CGRect, movedAt: Date?, at time: Date,
+                                       mouseDown: Bool) -> FollowStep {
+        if now != frame {
+            guard now.size == frame.size else { return .resized }
+            return .stepAside(CGVector(dx: now.minX - frame.minX, dy: now.minY - frame.minY))
+        }
+        if let movedAt, time.timeIntervalSince(movedAt) > 0.12, !mouseDown { return .comeBack }
+        return .stay
+    }
+
+    private func followTick() {
+        // The window server knows where a window is at every frame of a
+        // drag, sooner than the app does.
+        guard var target = followed, panel.isVisible || target.movedAt != nil,
+              let now = Self.bounds(of: target.id) else {
+            stopFollowing()
+            return
+        }
+        let time = Date()
+        switch Self.followStep(from: target.frame, to: now, movedAt: target.movedAt, at: time,
+                               mouseDown: NSEvent.pressedMouseButtons & 1 != 0) {
+        case .stay:
+            break
+        case .stepAside(let delta):
+            panel.orderOut(nil)
+            // Window bounds share the accessibility coordinates: y runs down.
+            panel.setFrameOrigin(NSPoint(x: panel.frame.minX + delta.dx, y: panel.frame.minY - delta.dy))
+            target.frame = now
+            target.movedAt = time
+            followed = target
+        case .comeBack:
+            followed?.movedAt = nil
+            panel.orderFrontRegardless()
+        case .resized:
+            hide()
+            target.resized?()
+        }
+    }
+
+    private func stopFollowing() {
+        followTimer?.invalidate()
+        followTimer = nil
+        followed = nil
+    }
+
+    private static func windowID(pid: pid_t, frame: CGRect) -> CGWindowID? {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        let match = windows.first { info in
+            guard (info[kCGWindowOwnerPID as String] as? pid_t) == pid, (info[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = bounds(info) else { return false }
+            return abs(bounds.minX - frame.minX) < 2 && abs(bounds.minY - frame.minY) < 2
+                && abs(bounds.width - frame.width) < 2 && abs(bounds.height - frame.height) < 2
+        }
+        return match?[kCGWindowNumber as String] as? CGWindowID
+    }
+
+    private static func bounds(of id: CGWindowID) -> CGRect? {
+        (CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]])?.first.flatMap(bounds)
+    }
+
+    private static func bounds(_ info: [String: Any]) -> CGRect? {
+        (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
     }
 
     /// What the overlay currently shows, as an image, for reviewing its look
@@ -288,6 +391,7 @@ final class Overlay: NSObject {
     // MARK: - Helpers
 
     @objc private func hideNow() {
+        stopFollowing()
         panel.orderOut(nil)
     }
 

@@ -641,6 +641,7 @@ final class Controller: NSObject {
         state = .working(trigger)
         overlay.showWorking(caret: snap.caret, input: snap.frame, fontSize: CGFloat(runtimeConfig.ghostFontSize),
                             offset: CGPoint(x: runtimeConfig.ghostOffsetX, y: runtimeConfig.ghostOffsetY))
+        overlay.follow(pid: trigger.pid, frame: snap.windowFrame)
         Task { await self.run(trigger) }
     }
 
@@ -674,7 +675,7 @@ final class Controller: NSObject {
             window = try await header.captureWindow(pid: t.pid, windowFrame: snap.windowFrame)
         } catch {
             guard isCurrent(t.id) else { return }
-            fail(t, "截不到顶部栏：\(error.localizedDescription)。检查屏幕录制权限")
+            fail(t, (error as? HeaderError)?.errorDescription ?? "截不到顶部栏：\(error.localizedDescription)。检查屏幕录制权限")
             return
         }
         let captureMS = ms(since: captureStart)
@@ -770,6 +771,8 @@ final class Controller: NSObject {
             return
         }
 
+        await AX.waitForStillWindow(pid: t.pid, from: snap.windowFrame)
+        guard isCurrent(t.id) else { return }
         // Check before display: same app, same input text, same chat.
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == t.pid,
               let now = AX.inputSnapshot(pid: t.pid), now.value == snap.value, CFEqual(now.element, snap.element) else {
@@ -809,7 +812,12 @@ final class Controller: NSObject {
         let lines = (try? await Task.detached(priority: .userInitiated, operation: {
             try HeaderReader.recognize(image)
         }).value) ?? []
-        return TextUtil.headerMatches(lines: lines, title: title)
+        if TextUtil.headerMatches(lines: lines, title: title) { return true }
+        // Sizes only, never the text: enough to tell a blank capture from
+        // other words or a name read differently.
+        let lengths = lines.prefix(4).map { TextUtil.normalize($0.text).count }
+        Log.info("顶部栏和生成时不同：会话名 \(TextUtil.normalize(title).count) 字，这次读到 \(lines.count) 行（前几行 \(lengths) 字）")
+        return false
     }
 
     // MARK: - Shown
@@ -835,6 +843,9 @@ final class Controller: NSObject {
             overlay.showBubble(p.text, notes: p.notes, input: p.input.frame, fontSize: CGFloat(runtimeConfig.ghostFontSize), rewrite: p.mode == "rewrite")
         }
         state = .shown(p)
+        // Smooth while the window is dragged; the watch then redraws the
+        // suggestion against the input box where it ends up.
+        overlay.follow(pid: p.trigger.pid, frame: p.input.windowFrame)
         startWatch()
         guard report else { return }
         feedback(p.trigger.id, "shown", chatID: p.chatID, mode: p.mode, suggestionLen: p.text.count,
@@ -915,9 +926,10 @@ final class Controller: NSObject {
         }
         if now.value != p.input.value || !CFEqual(now.element, p.input.element) {
             invalidate(p, reason: "input_changed", toast: nil)
-        } else if abs(now.frame.minX - p.input.frame.minX) > 1 || abs(now.frame.minY - p.input.frame.minY) > 1 {
-            invalidate(p, reason: "window_moved", toast: nil)
-        } else if abs(now.frame.width - p.input.frame.width) > 1 || abs(now.frame.height - p.input.frame.height) > 1 {
+        } else if abs(now.frame.minX - p.input.frame.minX) > 1 || abs(now.frame.minY - p.input.frame.minY) > 1
+                    || abs(now.frame.width - p.input.frame.width) > 1 || abs(now.frame.height - p.input.frame.height) > 1 {
+            // The same input with the same text, moved or resized with its
+            // window: the suggestion follows it.
             display(p.restored(input: now), report: false)
         } else if Date().timeIntervalSince(p.shownAt) > 120 {
             invalidate(p, reason: "timeout", toast: nil)

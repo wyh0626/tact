@@ -10,11 +10,16 @@ struct OCRLine {
 enum HeaderError: LocalizedError {
     case windowNotFound
     case cropFailed
+    /// macOS also stops honouring the grant for a running Tact whose app
+    /// was replaced on disk, by an update say, until it is opened again.
+    case screenRecordingDenied
 
     var errorDescription: String? {
         switch self {
         case .windowNotFound: return "屏幕录制里找不到当前聊天窗口"
         case .cropFailed: return "顶部栏区域超出了窗口范围"
+        case .screenRecordingDenied:
+            return "没有屏幕录制权限：到「系统设置 → 隐私与安全性 → 屏幕录制」打开 Tact。刚更新过 Tact 的话，退出后重新打开"
         }
     }
 }
@@ -43,14 +48,25 @@ final class HeaderReader {
     /// The whole chat window, so one capture serves both the header crop
     /// and the input background sample.
     func captureWindow(pid: pid_t, windowFrame: CGRect) async throws -> CGImage {
-        let window = try await findWindow(pid: pid, frame: windowFrame)
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        let configuration = SCStreamConfiguration()
-        let scale = CGFloat(filter.pointPixelScale)
-        configuration.width = max(1, Int(windowFrame.width * scale))
-        configuration.height = max(1, Int(windowFrame.height * scale))
-        configuration.showsCursor = false
-        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        do {
+            let window = try await findWindow(pid: pid, frame: windowFrame)
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            let configuration = SCStreamConfiguration()
+            let scale = CGFloat(filter.pointPixelScale)
+            configuration.width = max(1, Int(windowFrame.width * scale))
+            configuration.height = max(1, Int(windowFrame.height * scale))
+            configuration.showsCursor = false
+            return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        } catch {
+            throw Self.explained(error)
+        }
+    }
+
+    /// ScreenCaptureKit's refusal, in words a user can act on.
+    nonisolated static func explained(_ error: Error) -> Error {
+        let ns = error as NSError
+        guard ns.domain == SCStreamErrorDomain, ns.code == SCStreamError.Code.userDeclined.rawValue else { return error }
+        return HeaderError.screenRecordingDenied
     }
 
     func capture(pid: pid_t, windowFrame: CGRect, rect: CGRect) async throws -> CGImage {

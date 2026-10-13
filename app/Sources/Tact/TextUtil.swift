@@ -24,6 +24,29 @@ enum TextUtil {
         return String(out)
     }
 
+    /// What differs between two reads of the same chat, or nil when they
+    /// agree. OCR can read unchanged punctuation, width or case differently
+    /// ("，" then ","), so only characters, letters and digits count. The
+    /// answer names kinds of characters, never the text, for the log.
+    static func change(from old: (title: String, draft: String), to new: (title: String, draft: String)) -> String? {
+        if let title = difference(old.title, new.title) { return "会话名和刚才读到的不同（\(title)）" }
+        if let draft = difference(old.draft, new.draft) { return "草稿和刚才读到的不同（\(draft)）" }
+        return nil
+    }
+
+    private static func difference(_ a: String, _ b: String) -> String? {
+        let before = Array(normalize(a)), after = Array(normalize(b))
+        guard before != after else { return nil }
+        let at = zip(before, after).prefix { $0 == $1 }.count
+        let kind = { (text: [Character]) -> String in
+            guard at < text.count else { return "无" }
+            let c = text[at]
+            if c.unicodeScalars.contains(where: \.properties.isIdeographic) { return "汉字" }
+            return c.isLetter ? "字母" : c.isNumber ? "数字" : "其他"
+        }
+        return "\(before.count) → \(after.count) 字，第 \(at + 1) 个字起：\(kind(before)) → \(kind(after))"
+    }
+
     /// Whether the header OCR still shows the chat the suggestion was made for.
     static func headerMatches(lines: [OCRLine], title: String) -> Bool {
         let t = normalize(title)

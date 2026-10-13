@@ -809,7 +809,7 @@ private struct AboutPane: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Tact").font(Theme.display(22)).foregroundStyle(Theme.ink)
                     Text("版本 \(version)").font(Theme.mono(11)).foregroundStyle(.secondary)
-                    Text("别人说完，回复已经在输入框里等你。").font(.system(size: 13))
+                    Text("不知道怎么回？按快捷键，回复就在输入框里。").font(.system(size: 13))
                 }
             }
             Card(title: "文件位置") {

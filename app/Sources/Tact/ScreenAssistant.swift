@@ -91,6 +91,11 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         var inputFrame: CGRect { onScreen(look.input) }
         var typingFrame: CGRect { onScreen(look.typing) }
         var anchorFrame: CGRect { onScreen(look.anchor) }
+
+        /// The same look in the window dragged to `frame`, its size unchanged.
+        func moved(to frame: CGRect) -> View {
+            View(pid: pid, window: frame, scale: scale, look: look)
+        }
     }
 
     private struct Shown {
@@ -100,6 +105,11 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let text: String
         let mode: String
         let shownAt: Date
+
+        /// The same suggestion on the window dragged to `frame`.
+        func moved(to frame: CGRect) -> Shown {
+            Shown(requestID: requestID, view: view.moved(to: frame), chatID: chatID, text: text, mode: mode, shownAt: shownAt)
+        }
     }
 
     private enum State {
@@ -119,6 +129,9 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     private var state: State = .idle
     private var call: EngineCall?
     private var watchTimer: Timer?
+    /// A click landed on the window since the hotkey, to drag it say, and
+    /// may have taken the keyboard from the input box.
+    private var windowClicked = false
     private static var fontSize: CGFloat { 13 }
 
     init(reader: Reader, platformID: String, overlay: Overlay, capture: HeaderReader,
@@ -132,27 +145,19 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         self.sendFeedback = sendFeedback
     }
 
-    static func windowFrame(pid: pid_t) -> CGRect? {
-        let app = AXUIElementCreateApplication(pid)
-        _ = AXUIElementSetMessagingTimeout(app, 1.0)
-        for name in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
-            if let window = AX.element(AX.attr(app, name)), let frame = AX.frame(window) { return frame }
-        }
-        return nil
-    }
-
     // MARK: - Trigger
 
     func trigger(_ app: NSRunningApplication) {
         reset(detail: "retriggered")
         let pid = app.processIdentifier
-        guard let window = Self.windowFrame(pid: pid) else {
+        guard let window = AX.windowFrame(pid: pid) else {
             Log.info("\(reader.name)：拿不到窗口位置")
             NSSound.beep()
             return
         }
         let id = UUID().uuidString
         state = .working(id)
+        windowClicked = false
         Task { await run(id: id, pid: pid, window: window, started: Date()) }
     }
 
@@ -201,6 +206,9 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             return
         }
         overlay.showWorking(caret: view.anchorFrame, input: view.inputFrame, fontSize: Self.fontSize)
+        // A resize hides the working pixels; the suggestion is placed on
+        // the window as it is once ready.
+        overlay.follow(pid: view.pid, frame: view.window)
         let token = EngineCall()
         call = token
         let raw: [String: Any]
@@ -230,21 +238,27 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             overlay.showToast("这次不建议", input: view.inputFrame, duration: 1.5)
             return
         }
-        guard await stillShows(view), isCurrent(id) else {
+        await AX.waitForStillWindow(pid: view.pid, from: view.window)
+        guard isCurrent(id) else { return }
+        guard let now = await current(view), isCurrent(id) else {
             guard isCurrent(id) else { return }
             state = .idle
             overlay.showToast("会话或输入框变了，建议作废", input: view.inputFrame, duration: 1.5)
             feedback(id, "voided", chatID: chatID, detail: "changed_before_display")
             return
         }
-        let shown = Shown(requestID: id, view: view, chatID: chatID, text: text, mode: r.mode, shownAt: Date())
-        let asGhost = r.mode == "complete" && showGhost(text, tags: r.shortNotes, in: view)
+        let shown = Shown(requestID: id, view: now, chatID: chatID, text: text, mode: r.mode, shownAt: Date())
+        let asGhost = r.mode == "complete" && showGhost(text, tags: r.shortNotes, in: now)
         if !asGhost {
-            let copyOnly = r.mode == "rewrite" && view.look.draftClipped
-            overlay.showBubble(text, notes: r.notes, input: view.inputFrame, fontSize: Self.fontSize, rewrite: r.mode == "rewrite",
+            let copyOnly = r.mode == "rewrite" && now.look.draftClipped
+            overlay.showBubble(text, notes: r.notes, input: now.inputFrame, fontSize: Self.fontSize, rewrite: r.mode == "rewrite",
                                footer: copyOnly ? "草稿可能没读全  ·  TAB 复制  ·  ESC 取消" : nil)
         }
         state = .shown(shown)
+        overlay.follow(pid: now.pid, frame: now.window) { [weak self] in
+            guard let self, case .shown(let current) = self.state, current.requestID == id else { return }
+            self.dismiss(current, event: "voided", detail: "window_resized")
+        }
         startWatch()
         feedback(id, "shown", chatID: chatID, mode: r.mode, suggestionLen: text.count,
                  latency: ms(since: started), detail: asGhost ? "ghost" : "bubble")
@@ -280,22 +294,38 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         return View(pid: pid, window: window, scale: scale, look: found)
     }
 
-    /// The same window, chat and draft as when `view` was read.
-    private func stillShows(_ view: View) async -> Bool {
+    /// `view` as the window shows it now: the same chat and draft, in a
+    /// window that may have been dragged or resized since. Nil when the
+    /// app left the front or the chat or draft changed.
+    private func current(_ view: View) async -> View? {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == view.pid,
-              Self.windowFrame(pid: view.pid) == view.window else {
-            Log.info("\(reader.name)：窗口换了或移动了")
-            return false
+              let frame = AX.windowFrame(pid: view.pid) else {
+            Log.info("\(reader.name)：窗口不在前台了")
+            return nil
         }
-        guard let now = await currentTitleAndDraft(view) else {
-            Log.info("\(reader.name)：重新读画面失败")
-            return false
+        let now: View
+        let reading: (title: String, draft: String)
+        if frame.size == view.window.size {
+            now = view.moved(to: frame)
+            guard let read = await currentTitleAndDraft(now) else {
+                Log.info("\(reader.name)：重新读画面失败")
+                return nil
+            }
+            reading = read
+        } else {
+            // A new size lays the window out anew: read all of it again.
+            guard let fresh = try? await look(pid: view.pid, window: frame) else {
+                Log.info("\(reader.name)：窗口改了大小，重新读画面失败")
+                return nil
+            }
+            now = fresh
+            reading = (fresh.look.title, fresh.look.draft)
         }
-        if now.title != view.look.title { Log.info("\(reader.name)：会话名和刚才读到的不同") }
-        if now.draft != view.look.draft {
-            Log.info("\(reader.name)：草稿和刚才读到的不同（\(view.look.draft.count) → \(now.draft.count) 字）")
+        if let change = TextUtil.change(from: (view.look.title, view.look.draft), to: reading) {
+            Log.info("\(reader.name)：\(change)")
+            return nil
         }
-        return now.title == view.look.title && now.draft == view.look.draft
+        return now
     }
 
     private func currentTitleAndDraft(_ view: View) async -> (title: String, draft: String)? {
@@ -308,6 +338,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     // MARK: - Shown
 
     func handle(type: CGEventType, event: CGEvent) -> Bool {
+        if type != .keyDown { windowClicked = true }
         guard case .shown(let shown) = state else { return false }
         if type == .keyDown {
             let code = event.getIntegerValueField(.keyboardEventKeycode)
@@ -323,8 +354,23 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             dismiss(shown, event: "dismissed", detail: "typing")
             return false
         }
-        dismiss(shown, event: "dismissed", detail: "click")
+        Task { await settleClick(on: shown) }
         return false
+    }
+
+    /// A click ends the suggestion, unless it dragged the window: then the
+    /// suggestion stays, and the overlay comes back where the window stopped.
+    private func settleClick(on shown: Shown) async {
+        while NSEvent.pressedMouseButtons & 1 != 0 {
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        guard case .shown(let current) = state, current.requestID == shown.requestID else { return }
+        guard let frame = AX.windowFrame(pid: current.view.pid), frame != current.view.window else {
+            dismiss(current, event: "dismissed", detail: "click")
+            return
+        }
+        // A resize is the overlay's to end; a drag keeps the suggestion.
+        if frame.size == current.view.window.size { state = .shown(current.moved(to: frame)) }
     }
 
     /// The app left the front, the settings changed, or a new trigger came.
@@ -369,8 +415,6 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != shown.view.pid {
             dismiss(shown, event: "voided", detail: "app_deactivated")
-        } else if Self.windowFrame(pid: shown.view.pid) != shown.view.window {
-            dismiss(shown, event: "voided", detail: "window_moved")
         } else if Date().timeIntervalSince(shown.shownAt) > 120 {
             dismiss(shown, event: "voided", detail: "timeout")
         }
@@ -385,9 +429,8 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     }
 
     private func finishAccept(_ shown: Shown) async {
-        let view = shown.view
-        guard await stillShows(view) else {
-            overlay.showToast("会话或输入框变了，没有写入", input: view.inputFrame, duration: 2, kind: .warning)
+        guard let view = await current(shown.view) else {
+            overlay.showToast("会话或输入框变了，没有写入", input: shown.view.inputFrame, duration: 2, kind: .warning)
             feedback(shown.requestID, "voided", chatID: shown.chatID, detail: "input_changed_on_accept")
             return
         }
@@ -401,6 +444,9 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             return
         }
         let before = view.look.draft
+        if windowClicked {
+            await Inserter.click(at: CGPoint(x: view.anchorFrame.midX, y: view.anchorFrame.midY))
+        }
         let outcome = await Inserter.pasteUnread(shown.text, replacing: !before.isEmpty) {
             guard let draft = await self.currentTitleAndDraft(view)?.draft else { return false }
             return !draft.isEmpty && draft != before

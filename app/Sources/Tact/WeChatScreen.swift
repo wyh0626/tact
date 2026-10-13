@@ -98,6 +98,10 @@ enum WeChatScreen {
 
     /// Two pixels this far apart in any channel are on different surfaces.
     static let edgeThreshold = 8
+    /// The conversation list and the chat meet without a line, and beside
+    /// the input box their colours differ by only 8. A column edge must
+    /// run down most of the window, so a fainter step is still safe.
+    static let columnEdgeThreshold = 4
     /// The header holds the chat's name, from 21 to 38 points down.
     static let headerHeight: CGFloat = 50
     /// The input box's controls (emoji, files, voice, send) take its bottom
@@ -133,7 +137,7 @@ enum WeChatScreen {
         let needed = rows.count * 85 / 100
         let columns = (1..<pixels.width).filter { x in
             var count = 0
-            for y in rows where pixels.color(x, y).distance(to: pixels.color(x - 1, y)) > edgeThreshold {
+            for y in rows where pixels.color(x, y).distance(to: pixels.color(x - 1, y)) > columnEdgeThreshold {
                 count += 1
             }
             return count >= needed

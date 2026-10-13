@@ -13,6 +13,38 @@ struct InputSnapshot {
 }
 
 enum AX {
+    /// The frontmost window of `pid`: the focused one, or else the main one.
+    static func windowFrame(pid: pid_t) -> CGRect? {
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, 1.0)
+        for name in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            if let window = AX.element(AX.attr(app, name)), let frame = AX.frame(window) { return frame }
+        }
+        return nil
+    }
+
+    /// Waits out a drag of the window that was at `frame`: returns once the
+    /// mouse is up and the window has stayed put a moment, or on `timeout`.
+    /// Reading a window mid-drag catches it in motion, and nothing shows
+    /// over a moving window anyway.
+    static func waitForStillWindow(pid: pid_t, from frame: CGRect, timeout: TimeInterval = 10) async {
+        let mouseDown = { NSEvent.pressedMouseButtons & 1 != 0 }
+        guard mouseDown() || windowFrame(pid: pid) != frame else { return }
+        let deadline = Date().addingTimeInterval(timeout)
+        var last = windowFrame(pid: pid)
+        var stillSince = Date()
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            let now = windowFrame(pid: pid)
+            if now != last || mouseDown() {
+                last = now
+                stillSince = Date()
+            } else if Date().timeIntervalSince(stillSince) >= 0.12 {
+                return
+            }
+        }
+    }
+
     static func isTrusted(prompt: Bool) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: Controller?
     private var windows: WindowManager?
     private var configProblem: String?
+    private var launchedAt = Date.distantFuture
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMainMenu()
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows = w
         buildStatusItem()
         Log.info("Tact 已启动：在聊天工具里按 \(c.hotKeyDisplay) 生成建议")
+        launchedAt = Date()
 
         if !OnboardingModel.isCompleted {
             w.showOnboarding()
@@ -37,6 +39,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         controller?.shutdown()
+    }
+
+    /// Opening Tact again (Finder, Spotlight, `open`) shows its window: on a
+    /// full menu bar the icon can sit hidden behind the notch. An app
+    /// without a Dock icon gets no reopen event then, only brought forward,
+    /// so coming forward with nothing open counts as one. Launching (by
+    /// hand, at login, after a rebuild) brings it forward too and opens
+    /// nothing.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard Date().timeIntervalSince(launchedAt) > 2, let windows, !windows.isShowingWindow,
+              panel?.isVisible != true else { return }
+        if OnboardingModel.isCompleted {
+            windows.showSettings()
+        } else {
+            windows.showOnboarding()
+        }
     }
 
     /// A menu bar app shows no menu bar, but text fields still get ⌘C, ⌘V,

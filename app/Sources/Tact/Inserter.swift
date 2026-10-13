@@ -245,6 +245,22 @@ enum Inserter {
         return true
     }
 
+    /// Clicks at `point` (accessibility coordinates) and puts the pointer
+    /// back where it was: a click elsewhere in the window can take the
+    /// keyboard from the input box, and a paste needs it there.
+    static func click(at point: CGPoint) async {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let pointer = CGEvent(source: nil)?.location
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
+        // The click moves the pointer when it is delivered; move it back after.
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        if let pointer { CGWarpMouseCursorPosition(pointer) }
+        try? await Task.sleep(nanoseconds: 60_000_000)
+    }
+
     private static func postCommand(_ key: CGKeyCode) -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),

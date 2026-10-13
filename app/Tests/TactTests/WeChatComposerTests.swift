@@ -103,4 +103,23 @@ struct WeChatComposerTests {
         let edge = Overlay.workingFrame(caret: CGRect(x: 302, y: 560, width: 1, height: 2), input: oneLine, fontSize: 13)
         #expect(edge.minY >= oneLine.minY && edge.maxY <= oneLine.maxY)
     }
+
+    /// The overlay steps aside while its window is dragged and comes back
+    /// once the window is let go and still; a resize ends it.
+    @Test func theOverlayWaitsOutADrag() {
+        let window = CGRect(x: 100, y: 80, width: 1000, height: 600)
+        let dragged = window.offsetBy(dx: 40, dy: -12)
+        let start = Date()
+        #expect(Overlay.followStep(from: window, to: window, movedAt: nil, at: start, mouseDown: false) == .stay)
+        #expect(Overlay.followStep(from: window, to: dragged, movedAt: nil, at: start, mouseDown: true)
+                == .stepAside(CGVector(dx: 40, dy: -12)))
+        // Held still mid-drag, or only just let go: still out of the way.
+        let later = start.addingTimeInterval(0.5)
+        #expect(Overlay.followStep(from: dragged, to: dragged, movedAt: start, at: later, mouseDown: true) == .stay)
+        #expect(Overlay.followStep(from: dragged, to: dragged, movedAt: later, at: later.addingTimeInterval(0.05),
+                                   mouseDown: false) == .stay)
+        #expect(Overlay.followStep(from: dragged, to: dragged, movedAt: start, at: later, mouseDown: false) == .comeBack)
+        let resized = CGRect(x: 100, y: 80, width: 900, height: 600)
+        #expect(Overlay.followStep(from: window, to: resized, movedAt: nil, at: start, mouseDown: true) == .resized)
+    }
 }

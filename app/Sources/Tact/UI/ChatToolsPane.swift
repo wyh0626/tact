@@ -59,7 +59,7 @@ private struct WeChatCard: View {
                     .labelsHidden().toggleStyle(.switch)
             }
             if model.wechat {
-                if !Permission.screenRecording.isGranted {
+                if model.permissions[.screenRecording] == false {
                     SettingRow(title: "需要屏幕录制权限", detail: "在系统设置里打开 Tact 的屏幕录制，然后重新打开 Tact") {
                         Button("打开系统设置") { Permission.screenRecording.openSystemSettings() }
                             .buttonStyle(SecondaryButtonStyle())

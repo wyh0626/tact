@@ -7,20 +7,22 @@ import Testing
 /// top-left origin, like WeChatScreen's.
 private struct FakeWindow {
     static let scale: CGFloat = 2
-    let size = CGSize(width: 1000, height: 600)
+    let size: CGSize
     let context: CGContext
 
     static let list = Pixels.Color(r: 250, g: 250, b: 250)
 
-    init() {
+    /// The input box's top line sits 130 points above the bottom.
+    init(height: CGFloat = 600) {
+        size = CGSize(width: 1000, height: height)
         context = CGContext(data: nil, width: Int(size.width * Self.scale), height: Int(size.height * Self.scale),
                             bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        fill(CGRect(x: 0, y: 0, width: 60, height: 600), Pixels.Color(r: 46, g: 46, b: 46))
-        fill(CGRect(x: 60, y: 0, width: 240, height: 600), Pixels.Color(r: 247, g: 247, b: 247))
-        fill(CGRect(x: 300, y: 0, width: 700, height: 600), Self.list)
-        fill(CGRect(x: 300, y: 0, width: 0.5, height: 600), Self.line)
-        fill(CGRect(x: 300, y: 470, width: 700, height: 0.5), Self.line)
+        fill(CGRect(x: 0, y: 0, width: 60, height: height), Pixels.Color(r: 46, g: 46, b: 46))
+        fill(CGRect(x: 60, y: 0, width: 240, height: height), Pixels.Color(r: 247, g: 247, b: 247))
+        fill(CGRect(x: 300, y: 0, width: 700, height: height), Self.list)
+        fill(CGRect(x: 300, y: 0, width: 0.5, height: height), Self.line)
+        fill(CGRect(x: 300, y: height - 130, width: 700, height: 0.5), Self.line)
     }
 
     static let line = Pixels.Color(r: 224, g: 224, b: 224)
@@ -133,6 +135,22 @@ struct WeChatScreenTests {
         #expect(abs(look.anchor.minX - drawn.minX) <= 1 && abs(look.anchor.midY - drawn.midY) <= 2)
     }
 
+    /// A window dragged while the model works: the same look, placed on
+    /// the window where it is now.
+    @MainActor
+    @Test func aDraggedWindowCarriesItsLook() throws {
+        let window = FakeWindow()
+        window.draw("小林", at: CGPoint(x: 330, y: 14), size: 16)
+        window.type("反驳", caretGap: 2.5)
+        let look = try #require(try WeChatAssistant().look(window.image, scale: FakeWindow.scale))
+        let view = ScreenAssistant<WeChatAssistant>.View(pid: 1, window: CGRect(x: 100, y: 80, width: 1000, height: 600),
+                                                         scale: FakeWindow.scale, look: look)
+        let dragged = view.moved(to: CGRect(x: 340, y: 20, width: 1000, height: 600))
+        #expect(dragged.anchorFrame == view.anchorFrame.offsetBy(dx: 240, dy: -60))
+        #expect(dragged.inputFrame == view.inputFrame.offsetBy(dx: 240, dy: -60))
+        #expect(dragged.look.draft == "反驳" && dragged.scale == view.scale)
+    }
+
     @Test func theCaretIsASolidGreenBar() throws {
         let lit = FakeWindow()
         let drawn = try #require(lit.type("在开会，晚点回你", caretGap: 2.5))
@@ -148,6 +166,21 @@ struct WeChatScreenTests {
         lookalikes.fill(CGRect(x: 920, y: 510, width: 64, height: 28), FakeWindow.caretGreen)
         let (otherPixels, otherLayout) = try lookalikes.read()
         #expect(WeChatScreen.caret(otherPixels, in: otherLayout.typing, scale: FakeWindow.scale) == nil)
+    }
+
+    /// WeChat 4.1 in a short window: no line between the list and the
+    /// chat, whose colours differ by only 8 beside the rounded input box,
+    /// and that box takes over a third of the height.
+    @Test func aShortWindowWithAFaintListEdgeIsStillAChat() throws {
+        let window = FakeWindow(height: 410)
+        window.fill(CGRect(x: 60, y: 0, width: 240, height: 410), Pixels.Color(r: 240, g: 240, b: 240))
+        window.fill(CGRect(x: 300, y: 0, width: 700, height: 410), FakeWindow.list)
+        window.fill(CGRect(x: 300, y: 262, width: 700, height: 148), Pixels.Color(r: 248, g: 248, b: 248))
+        window.fill(CGRect(x: 306, y: 266, width: 688, height: 131), FakeWindow.line)
+        window.fill(CGRect(x: 307, y: 267, width: 686, height: 129), FakeWindow.list)
+        let (_, layout) = try window.read()
+        #expect(layout.chat.minX == 600 && layout.chat.maxX == 2000)
+        #expect(abs(layout.input.minY - 266 * FakeWindow.scale) <= 2)
     }
 
     @Test func aWindowWithoutAnInputBoxIsNotAChat() throws {

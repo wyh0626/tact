@@ -4,9 +4,9 @@
 
 # Tact
 
-### 别人说完，回复已经在输入框里等你
+### 不知道怎么回？按快捷键就好
 
-**在聊天窗口里按两下 ⌃，Tact 读完最近的聊天，把一句合适的回复放进输入框。**<br>
+**在聊天窗口里按快捷键，Tact 读完最近的聊天，把一句合适的回复放进输入框。**<br>
 按 Tab 采用；发不发、怎么改，都由你。
 
 [![License](https://img.shields.io/badge/license-MIT-111111)](LICENSE) ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-111111)
@@ -15,10 +15,7 @@
 
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-  <img src="docs/images/hero-light.png" width="900" alt="聊天窗口的输入框里，Tact 以灰字给出一句回复，按 Tab 即可采用">
-</picture>
+<img src="docs/images/demo.gif" width="900" alt="演示：输入框空着时按快捷键，Tact 以灰字给出一句回复，按 Tab 采用；打「拒绝」再按快捷键，改写成得体的话，按 Tab 替换">
 
 </div>
 
@@ -28,16 +25,11 @@
 
 消息一多，回复就成了体力活：翻上下文、想措辞、打字、再改。Tact 把它缩成两个按键：
 
-- **输入框空着**：按两下 ⌃，结合最近的聊天给出一句你最可能要发的话，以灰字显示，按 Tab 填入。
+- **输入框空着**：按快捷键，结合最近的聊天给出一句你最可能要发的话，以灰字显示，按 Tab 填入。
 - **打了几个字**：比如「拒绝」「下周再说」，Tact 当作你的意思，扩写成一句得体的话；写好的长草稿只修语句和语气，不改立场。
 - **没有合适的**：提示「这次不建议」，不硬凑。
 
 它**从不替你发送**，只把字放进输入框。如果你回消息本来就快，或者不想让 AI 碰聊天内容，就不需要它。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/rewrite-dark.png">
-  <img src="docs/images/rewrite-light.png" width="900" alt="输入框里打了「拒绝」，上方卡片给出改写好的婉拒，按 Tab 替换">
-</picture>
 
 ## 快速开始
 
@@ -45,28 +37,65 @@
 
 <sub>需要 macOS 14 及以上、Apple Silicon。目前没有经过苹果公证，第一次打开会被拦下：到「系统设置 → 隐私与安全性」点「仍要打开」。</sub>
 
-**2 · 跟着引导走。** 打开辅助功能和屏幕录制权限，选一个模型，再在「试一试」里拿一段模拟聊天练一遍：按两下 ⌃ 看灰字，按 Tab 填入，打「拒绝」看改写。
+**2 · 跟着引导走。** 打开辅助功能和屏幕录制权限，选一个模型，再在「试一试」里拿一段模拟聊天练一遍。快捷键可以在设置里换成你顺手的。
 
-**3 · 接入聊天工具。** 微信在「聊天工具 → 内置」里打开开关就能用；其他 IM 导入它的插件。之后在聊天窗口里按两下 ⌃。
+**3 · 接入聊天工具。** 微信在「聊天工具」里打开开关就能用；其他 IM 导入它的插件。之后在聊天窗口里按快捷键。
 
-## 支持的聊天工具
+## 菜单栏面板
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
+  <img src="docs/images/panel-light.png" width="300" align="right" alt="菜单栏面板：正在待命，微信已启用，模型 DeepSeek，推理程度可切换">
+</picture>
+
+Tact 没有主窗口，也不占程序坞，常用的都在菜单栏的小狗里：
+
+- 看它是否在待命，缺了什么权限
+- 开关聊天工具
+- 换模型、调推理程度：越低越快
+- 打开设置、重走引导、看统计
+
+菜单栏放不下、小狗被刘海挡住时，再打开一次 Tact 就会弹出设置窗口。
+
+<br clear="right">
+
+## 接入聊天工具
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-chat-dark.png">
+  <img src="docs/images/settings-chat-light.png" width="820" alt="设置里的聊天工具：微信内置，打开开关即可；其他 IM 导入插件">
+</picture>
 
 | 聊天工具 | 怎么接入 | 状态 |
 | --- | --- | --- |
-| 微信 | 内置。截图识别当前聊天和输入框，不读数据库，不改动微信 | 可用 |
+| 微信 | 内置。在本机截图识别当前聊天和输入框，不读数据库，不改动微信 | 可用 |
 | Telegram | 插件。扫码登录，用官方 API 只读最近的消息 | 实验性 |
-| 其他 IM | 按[插件规范](docs/ADAPTER.md)写一个插件，导入即可 | — |
+| 其他 IM | 按[插件规范](docs/ADAPTER.md)写一个插件，拖进「添加聊天工具」 | — |
 
-## 模型
+## 模型随你选
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-model-dark.png">
+  <img src="docs/images/settings-model-light.png" width="820" alt="设置里的模型：OpenAI、DeepSeek、本机、自定义四种">
+</picture>
 
 - **ChatGPT 账号**：用 Plus / Pro 套餐的额度，不需要 API Key。
-- **DeepSeek、OpenAI**，或任何兼容 OpenAI 接口的服务：Key 存在 macOS 钥匙串里。
+- **DeepSeek、OpenAI**，或任何兼容 OpenAI 接口的服务：Key 存在 macOS 钥匙串里。想要快，选不用思考的模型，或把推理程度调到最低。
 - **本机**：内置 llama.cpp，在设置里下载一个 Qwen3 模型，聊天内容不出这台 Mac。
+
+## 照你的说话方式写
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-style-dark.png">
+  <img src="docs/images/settings-style-light.png" width="820" alt="设置里的表达风格：用几行字写下说话习惯，按工作群、家人分段">
+</picture>
+
+用几行字写下你的说话习惯，比如「少用感叹号」「拒绝时给个理由」。用「## 标题」分段，工作群和家人可以各用一套。
 
 ## 隐私
 
 - 截图只在本机内存里识别，不保存，不上传。
-- 发给模型的只有会话名、最近的聊天文字、你的草稿和表达偏好；用本机模型时这些都不出这台 Mac。
+- 发给模型的只有会话名、最近的聊天文字、你的草稿和表达风格；用本机模型时这些都不出这台 Mac。
 - 统计只记次数、长度和耗时，不记聊天文字。
 
 ## 从源码构建
@@ -79,7 +108,7 @@
 TACT_SIGN_IDENTITY=- ./scripts/build-app.sh && ./scripts/build-dmg.sh   # 打包可分发的 DMG
 ```
 
-配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。
+配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。演示动画用 [HyperFrames](https://github.com/heygen-com/hyperframes) 制作，源文件在 [docs/demo](docs/demo)。
 
 ## 许可证
 

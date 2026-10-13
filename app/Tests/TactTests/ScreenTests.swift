@@ -87,6 +87,17 @@ struct ScreenTests {
         return view.subviews.lazy.compactMap { findScrollView(in: $0) }.first
     }
 
+    /// The check started when the model was made answers after the hold
+    /// and must not undo it.
+    @Test func aSetUpStatusHoldsAgainstLiveChecks() async throws {
+        let model = SettingsModel(controller: makeController())
+        model.showAsSetUp()
+        await model.refreshStatus().value
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(model.engineConnected && model.statusChecked)
+        #expect(Permission.allCases.allSatisfy { model.permissions[$0] == true })
+    }
+
     @Test func settingsPanes() {
         let model = SettingsModel(controller: makeController())
         model.stats = StatsData([

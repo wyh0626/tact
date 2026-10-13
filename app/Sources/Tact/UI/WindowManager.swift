@@ -34,6 +34,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
     /// The open settings window's state, if there is one.
     var openSettingsModel: SettingsModel? { settingsModel }
 
+    var isShowingWindow: Bool { settingsWindow?.isVisible == true || onboardingWindow?.isVisible == true }
+
     func showOnboarding() {
         if onboardingWindow == nil {
             let model = OnboardingModel(controller: controller)
@@ -73,5 +75,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
         } else if window === onboardingWindow {
             onboardingWindow = nil
         }
+        // Hand the front back to the app in use, so opening Tact again
+        // brings it forward and shows its window.
+        if !isShowingWindow { NSApp.deactivate() }
     }
 }

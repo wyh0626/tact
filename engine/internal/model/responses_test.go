@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sse(events ...string) string {
@@ -151,5 +152,25 @@ func TestResponsesOmitsUnsetSpeedOptions(t *testing.T) {
 	}
 	if _, ok := body["service_tier"]; ok {
 		t.Fatalf("service_tier must be left to the standard tier: %v", body)
+	}
+}
+
+func TestResponsesStreamTellsWhereTheTimeWent(t *testing.T) {
+	text, spent, err := readResponseStream(strings.NewReader(sse(
+		`{"type":"response.output_text.delta","delta":"好的"}`,
+		`{"type":"response.completed","response":{"usage":{"output_tokens":42,"output_tokens_details":{"reasoning_tokens":30}}}}`,
+	)))
+	if err != nil || text != "好的" {
+		t.Fatalf("got %q, %v", text, err)
+	}
+	if spent.firstText.IsZero() || spent.outputTokens != 42 || spent.reasoningTokens != 30 {
+		t.Fatalf("spent = %+v", spent)
+	}
+	line := spent.describe("gpt-fast", time.Now().Add(-time.Second), 200*time.Millisecond)
+	if !strings.Contains(line, "200ms 收到响应") || !strings.Contains(line, "思考 30 tokens，输出 42 tokens") {
+		t.Errorf("line = %q", line)
+	}
+	if strings.Contains(line, "好的") {
+		t.Errorf("the log line carries the reply: %q", line)
 	}
 }

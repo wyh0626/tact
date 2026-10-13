@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -121,16 +122,40 @@ func (c *ResponsesClient) Complete(ctx context.Context, msgs []Message) (string,
 	if httpClient == nil {
 		httpClient = NewHTTPClient(30 * time.Second)
 	}
+	start := time.Now()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("调用模型失败：%w", err)
 	}
 	defer resp.Body.Close()
+	answered := time.Since(start)
 	if resp.StatusCode/100 != 2 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return "", parseAPIError(resp.StatusCode, data)
 	}
-	return readResponseStream(resp.Body)
+	text, spent, err := readResponseStream(resp.Body)
+	if err == nil {
+		log.Print(spent.describe(c.Model, start, answered))
+	}
+	return text, err
+}
+
+// streamSpend is when a reply's text began and what the model spent on
+// it: where the wait for a suggestion went.
+type streamSpend struct {
+	firstText       time.Time
+	outputTokens    int
+	reasoningTokens int
+}
+
+// describe sizes and times only, never the text, for the engine log.
+func (s streamSpend) describe(model string, start time.Time, answered time.Duration) string {
+	first := "无"
+	if !s.firstText.IsZero() {
+		first = s.firstText.Sub(start).Round(time.Millisecond).String()
+	}
+	return fmt.Sprintf("模型 %s：%v 收到响应，%s 开始出字，%v 写完；思考 %d tokens，输出 %d tokens", model,
+		answered.Round(time.Millisecond), first, time.Since(start).Round(time.Millisecond), s.reasoningTokens, s.outputTokens)
 }
 
 func parseAPIError(status int, data []byte) *APIError {
@@ -157,10 +182,11 @@ func parseAPIError(status int, data []byte) *APIError {
 // readResponseStream collects the output text from a Responses event stream.
 // Only response.completed counts as success; a stream that ends before it,
 // or reports failure, is an error even if some text arrived.
-func readResponseStream(r io.Reader) (string, error) {
+func readResponseStream(r io.Reader) (string, streamSpend, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
 	var text strings.Builder
+	var spent streamSpend
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -181,6 +207,12 @@ func readResponseStream(r io.Reader) (string, error) {
 				IncompleteDetails *struct {
 					Reason string `json:"reason"`
 				} `json:"incomplete_details"`
+				Usage *struct {
+					OutputTokens        int `json:"output_tokens"`
+					OutputTokensDetails struct {
+						ReasoningTokens int `json:"reasoning_tokens"`
+					} `json:"output_tokens_details"`
+				} `json:"usage"`
 			} `json:"response"`
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -190,27 +222,33 @@ func readResponseStream(r io.Reader) (string, error) {
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
+			if spent.firstText.IsZero() {
+				spent.firstText = time.Now()
+			}
 			text.WriteString(ev.Delta)
 		case "response.completed":
-			return text.String(), nil
+			if u := ev.Response.Usage; u != nil {
+				spent.outputTokens, spent.reasoningTokens = u.OutputTokens, u.OutputTokensDetails.ReasoningTokens
+			}
+			return text.String(), spent, nil
 		case "response.failed":
 			e := &APIError{Status: http.StatusOK}
 			if ev.Response.Error != nil {
 				e.Code, e.Message = ev.Response.Error.Code, ev.Response.Error.Message
 			}
-			return "", e
+			return "", spent, e
 		case "response.incomplete":
 			reason := "未知原因"
 			if ev.Response.IncompleteDetails != nil && ev.Response.IncompleteDetails.Reason != "" {
 				reason = ev.Response.IncompleteDetails.Reason
 			}
-			return "", fmt.Errorf("模型回复不完整：%s", reason)
+			return "", spent, fmt.Errorf("模型回复不完整：%s", reason)
 		case "error":
-			return "", &APIError{Status: http.StatusOK, Code: ev.Code, Message: ev.Message}
+			return "", spent, &APIError{Status: http.StatusOK, Code: ev.Code, Message: ev.Message}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("读取模型回复失败：%w", err)
+		return "", spent, fmt.Errorf("读取模型回复失败：%w", err)
 	}
-	return "", errors.New("模型回复在完成前中断了")
+	return "", spent, errors.New("模型回复在完成前中断了")
 }
