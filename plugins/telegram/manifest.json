@@ -1,0 +1,44 @@
+{
+  "protocol_version": 1,
+  "id": "tact.telegram",
+  "name": "Telegram",
+  "version": "0.1.0",
+  "transport": "command-v1",
+  "setup": {
+    "summary": "用你自己的 Telegram 账号读取会话和最近消息：只读，不发送、不修改、不标记已读。登录信息只存在这台 Mac 的 ~/.tact/telegram（只有你能读）。",
+    "requirements": [
+      "已安装并登录 Telegram for macOS",
+      "手机上的 Telegram 用来扫码"
+    ],
+    "commands": [
+      {
+        "title": "扫码登录",
+        "command": "${plugin_dir}/tact-telegram login",
+        "detail": "终端里会显示二维码：手机 Telegram → 设置 → 设备 → 关联桌面设备，扫一下即可。开了两步验证的账号会再要密码。开发版第一次会先要 api_id 和 api_hash（在 my.telegram.org 申请）。"
+      },
+      {
+        "title": "退出登录（可选）",
+        "command": "${plugin_dir}/tact-telegram logout",
+        "detail": "结束这个会话，并删除这台 Mac 上的登录信息。也可以在手机 Telegram 的 设置 → 设备 里结束「Tact」。"
+      }
+    ],
+    "help_url": "https://my.telegram.org"
+  },
+  "entrypoint": ["${plugin_dir}/tact-telegram"],
+  "capabilities": {
+    "conversations.list": true,
+    "messages.read": true,
+    "composer.read": true,
+    "composer.apply": true,
+    "overlay.inline": true,
+    "events.subscribe": false
+  },
+  "desktop": {
+    "strategy": "screen-ocr-v1",
+    "bundle_ids": ["ru.keepcoder.Telegram"],
+    "header": {"top_offset": 0, "height": 52, "left_padding": 0},
+    "overlay": {"font_size": 13, "offset_x": 0, "offset_y": 0},
+    "send_shortcut": "return"
+  },
+  "limits": {"timeout_ms": 15000, "chats_cache_seconds": 600}
+}

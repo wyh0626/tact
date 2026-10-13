@@ -1,0 +1,45 @@
+{
+  "socket": "~/.tact/engine.sock",
+
+  "platforms": [],
+
+  "model": {
+    "base_url": "http://127.0.0.1:11434/v1",
+    "model": "qwen2.5:7b",
+    "api_key_env": "",
+    "timeout_ms": 20000,
+    "temperature": 0.3,
+    "max_tokens": 300,
+    "json_mode": false,
+    "append_no_think": false,
+    "allowed_base_urls": ["http://127.0.0.1:11434", "http://localhost:11434"]
+  },
+
+  "context": {
+    "history_limit": 20,
+    "max_message_chars": 500,
+    "max_suggestion_chars": 300
+  },
+
+  "style": {
+    "file": "~/.tact/style.md",
+    "default_section": "工作聊天",
+    "chat_sections": {
+      "李四 Li Si": "朋友聊天"
+    }
+  },
+
+  "feedback": {
+    "file": "~/.tact/feedback.jsonl",
+    "log_plaintext": false
+  },
+
+  "app": {
+    "hotkey": "double+ctrl",
+    "engine_command": ["__REPO__/engine/bin/tactd", "serve"],
+    "insert_method": "auto",
+    "request_timeout_seconds": 25,
+    "debug_save_header": false,
+    "wechat": false
+  }
+}

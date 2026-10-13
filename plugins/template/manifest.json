@@ -1,0 +1,24 @@
+{
+  "protocol_version": 1,
+  "id": "custom.example",
+  "name": "自定义 IM 示例（尚未实现）",
+  "version": "0.1.0",
+  "transport": "command-v1",
+  "entrypoint": ["/usr/bin/python3", "${plugin_dir}/adapter.py"],
+  "capabilities": {
+    "conversations.list": false,
+    "messages.read": false,
+    "composer.read": false,
+    "composer.apply": false,
+    "overlay.inline": false,
+    "events.subscribe": false
+  },
+  "desktop": {
+    "strategy": "ax-ocr-v1",
+    "bundle_ids": ["com.example.chat"],
+    "header": {"top_offset": 28, "height": 64, "left_padding": 0},
+    "overlay": {"font_size": 13, "offset_x": 0, "offset_y": 0},
+    "send_shortcut": "return"
+  },
+  "limits": {"timeout_ms": 15000, "chats_cache_seconds": 300}
+}

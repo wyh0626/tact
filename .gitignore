@@ -1,0 +1,14 @@
+# Build output
+engine/bin/
+app/.build/
+app/build/
+.swiftpm/
+dist/
+.cache/
+plugins/telegram/tact-telegram
+
+# Local tools and system files
+.claude/
+.DS_Store
+__pycache__/
+*.pyc
