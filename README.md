@@ -15,7 +15,7 @@
 
 <br>
 
-<img src="docs/images/demo.gif" width="900" alt="演示：输入框空着时按快捷键，Tact 以灰字给出一句回复，按 Tab 采用；打「拒绝」再按快捷键，改写成得体的话，按 Tab 替换">
+<video src="https://github.com/user-attachments/assets/83249e27-7f63-49f9-9a53-cc62f5956bb6" width="900" controls></video>
 
 </div>
 
@@ -90,7 +90,7 @@
 TACT_SIGN_IDENTITY=- ./scripts/build-app.sh && ./scripts/build-dmg.sh   # 打包可分发的 DMG
 ```
 
-配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。演示动画用 [HyperFrames](https://github.com/heygen-com/hyperframes) 制作，源文件在 [docs/demo](docs/demo)。
+配置项、插件、排错等细节见[使用说明](docs/GUIDE.md)。演示视频用 [HyperFrames](https://github.com/heygen-com/hyperframes) 制作，源文件在 [docs/demo](docs/demo)。
 
 ## 许可证
 
