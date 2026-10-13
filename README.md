@@ -33,31 +33,13 @@
 
 ## 快速开始
 
-**1 · 安装。** 从 [Releases](https://github.com/wyh0626/tact/releases/latest) 下载 `Tact-版本号-arm64.dmg`，把 Tact 拖进「应用程序」。
+**1 · 安装。** 从 [Releases](https://github.com/wyh0626/tact/releases/latest) 下载 `Tact-版本号-arm64.dmg`，把 Tact 拖进「应用程序」。打开后它只在菜单栏显示一只小狗，没有主窗口。
 
 <sub>需要 macOS 14 及以上、Apple Silicon。目前没有经过苹果公证，第一次打开会被拦下：到「系统设置 → 隐私与安全性」点「仍要打开」。</sub>
 
 **2 · 跟着引导走。** 打开辅助功能和屏幕录制权限，选一个模型，再在「试一试」里拿一段模拟聊天练一遍。快捷键可以在设置里换成你顺手的。
 
 **3 · 接入聊天工具。** 微信在「聊天工具」里打开开关就能用；其他 IM 导入它的插件。之后在聊天窗口里按快捷键。
-
-## 菜单栏面板
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
-  <img src="docs/images/panel-light.png" width="300" align="right" alt="菜单栏面板：正在待命，微信已启用，模型 DeepSeek，推理程度可切换">
-</picture>
-
-Tact 没有主窗口，也不占程序坞，常用的都在菜单栏的小狗里：
-
-- 看它是否在待命，缺了什么权限
-- 开关聊天工具
-- 换模型、调推理程度：越低越快
-- 打开设置、重走引导、看统计
-
-菜单栏放不下、小狗被刘海挡住时，再打开一次 Tact 就会弹出设置窗口。
-
-<br clear="right">
 
 ## 接入聊天工具
 
@@ -72,7 +54,7 @@ Tact 没有主窗口，也不占程序坞，常用的都在菜单栏的小狗里
 | Telegram | 插件。扫码登录，用官方 API 只读最近的消息 | 实验性 |
 | 其他 IM | 按[插件规范](docs/ADAPTER.md)写一个插件，拖进「添加聊天工具」 | — |
 
-## 模型随你选
+## 模型
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-model-dark.png">
