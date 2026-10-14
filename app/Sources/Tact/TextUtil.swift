@@ -56,6 +56,10 @@ enum TextUtil {
             let l = normalize(cleaned)
             guard l.count >= 2 else { continue }
             if l == t || t.contains(l) || l.contains(t) { return true }
+            // The engine found the chat by this header at a similarity of
+            // 0.75 or more (resolve.Score), OCR misreads included; reading
+            // it again must not hold it to a stricter standard.
+            if Double(editDistance(l, t)) <= Double(max(l.count, t.count)) * 0.25 { return true }
         }
         return false
     }
