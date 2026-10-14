@@ -42,6 +42,8 @@ final class PlatformSettings: ObservableObject {
     @Published var headerTopOffset: Double = 28
     @Published var headerHeight: Double = 64
     @Published private(set) var ocrTestMode: Bool
+    /// WeChat is built in: switched on, never imported.
+    @Published private(set) var wechat: Bool
 
     private let controller: Controller
     private let configPath: String
@@ -79,6 +81,7 @@ final class PlatformSettings: ObservableObject {
         self.controller = controller
         self.configPath = configPath
         ocrTestMode = controller.ocrTestMode
+        wechat = file.bool("app.wechat") ?? false
         registry = PlatformRegistry(file: file, configPath: configPath)
         rebuild()
         if let first = entries.first { loadDesktop(for: first.id) }
@@ -171,6 +174,20 @@ final class PlatformSettings: ObservableObject {
                 existing["header"] = header
                 instances[index]["desktop"] = existing
             }
+        }
+    }
+
+    func setWeChat(_ on: Bool) {
+        if on && !Permission.screenRecording.isGranted { Permission.screenRecording.request() }
+        do {
+            var file = try ConfigFile.load(from: configPath)
+            file.set("app.wechat", on)
+            try file.write(to: configPath)
+            wechat = on
+            problem = nil
+            if configPath == AppConfig.configPath { controller.apply(AppConfig.load().0) }
+        } catch {
+            problem = L10n.tr("保存失败：\(error.localizedDescription)", "Could not save: \(error.localizedDescription)")
         }
     }
 

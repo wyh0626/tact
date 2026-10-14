@@ -13,6 +13,9 @@ enum OnboardingStep: Int, CaseIterable {
         case .done: return L10n.tr("完成", "Done")
         }
     }
+
+    /// "05 · 聊天工具": numbered as in the step list beside it.
+    var eyebrow: String { String(format: "%02d · ", rawValue + 1) + title }
 }
 
 @MainActor
@@ -307,7 +310,7 @@ private struct PermissionsStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            StepTitle(eyebrow: L10n.tr("01 · 授权", "01 · Permissions"), title: L10n.tr("打开两个系统权限", "Enable two system permissions"),
+            StepTitle(eyebrow: OnboardingStep.permissions.eyebrow, title: L10n.tr("打开两个系统权限", "Enable two system permissions"),
                       detail: L10n.tr("点「去授权」后在系统设置里打开 Tact 的开关。授权状态会自动刷新。", "Click “Grant access”, then enable Tact in System Settings. Permission status refreshes automatically."))
             VStack(spacing: 12) {
                 ForEach(Permission.allCases) { permission in
@@ -364,7 +367,7 @@ private struct ModelStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            StepTitle(eyebrow: L10n.tr("02 · 模型", "02 · Model"), title: L10n.tr("选一个模型", "Choose a model"),
+            StepTitle(eyebrow: OnboardingStep.model.eyebrow, title: L10n.tr("选一个模型", "Choose a model"),
                       detail: L10n.tr("云端模型会收到当前会话最近的消息；选「本机」则完全在这台 Mac 上处理。", "Cloud models receive recent messages from the current chat. Choose “Local” to process everything on this Mac."))
             ModelForm(settings: settings, controller: model.controller, compact: true, showsSaveButton: false)
         }
@@ -380,8 +383,9 @@ private struct ChatStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            StepTitle(eyebrow: L10n.tr("03 · 聊天工具", "03 · Chat tools"), title: L10n.tr("添加你的聊天工具", "Add your chat app"),
-                      detail: L10n.tr("导入这个 IM 的插件，按它的步骤准备好，再打开开关。也可以稍后在设置里添加。", "Import your chat app’s plugin, follow its setup steps, then enable it. You can also add it later in Settings."))
+            StepTitle(eyebrow: OnboardingStep.chat.eyebrow, title: L10n.tr("添加你的聊天工具", "Add your chat app"),
+                      detail: L10n.tr("微信是内置的，打开开关就能用；其他 IM 导入它的插件，按步骤准备好再打开。也可以稍后在设置里添加。", "WeChat is built in: switch it on. For other chat apps, import their plugin, follow its setup steps, then enable it. You can also add them later in Settings."))
+            BuiltInWeChatCard(settings: settings)
             ChatToolList(settings: settings, onAdd: add)
             if !settings.entries.isEmpty {
                 Button { add() } label: { Label(L10n.tr("再添加一个", "Add another"), systemImage: "plus") }
@@ -408,12 +412,12 @@ private struct DoneStep: View {
     init(model: OnboardingModel) { self.model = model; settings = model.platformSettings }
 
     private var hasChatTool: Bool {
-        settings.entries.contains { $0.supported && $0.enabled && $0.supportsSuggestions }
+        settings.wechat || settings.entries.contains { $0.supported && $0.enabled && $0.supportsSuggestions }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            StepTitle(eyebrow: L10n.tr("04 · 完成", "04 · Done"), title: hasChatTool ? L10n.tr("去聊天窗口试一下", "Try it in your chat app") : L10n.tr("基础设置已完成", "Basic setup is complete"),
+            StepTitle(eyebrow: OnboardingStep.done.eyebrow, title: hasChatTool ? L10n.tr("去聊天窗口试一下", "Try it in your chat app") : L10n.tr("基础设置已完成", "Basic setup is complete"),
                       detail: hasChatTool ? L10n.tr("打开已接入的聊天工具，点一下输入框，然后：", "Open a connected chat app, click the input box, then:") : L10n.tr("聊天工具尚未接入。拿到插件后，在设置的「聊天工具」页面继续添加、检测并启用。", "No chat app is connected yet. When you have its plugin, open “Chat tools” in Settings to add, check, and enable it."))
             if hasChatTool {
                 VStack(alignment: .leading, spacing: 14) {

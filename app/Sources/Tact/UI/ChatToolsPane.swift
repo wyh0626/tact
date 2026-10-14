@@ -54,11 +54,11 @@ private struct WeChatCard: View {
     var body: some View {
         Card(title: L10n.tr("内置", "Built in")) {
             SettingRow(title: L10n.tr("微信", "WeChat"), detail: L10n.tr("定位当前聊天区，在本机识别文字和位置，再交给所选 AI 理解并生成建议。", "Finds the current chat area and recognizes text and positions on your Mac, then sends the text to your selected AI for suggestions. ")
-                       + L10n.tr("只读取窗口内可见内容，可以先开测试模式检查识别范围。", "Only visible window content is read. Use test mode to check the captured area first."), divider: model.wechat) {
-                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { model.wechat }, set: { model.setWeChat($0) }))
+                       + L10n.tr("只读取窗口内可见内容，可以先开测试模式检查识别范围。", "Only visible window content is read. Use test mode to check the captured area first."), divider: settings.wechat) {
+                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { settings.wechat }, set: { settings.setWeChat($0) }))
                     .labelsHidden().toggleStyle(.switch)
             }
-            if model.wechat {
+            if settings.wechat {
                 if model.permissions[.screenRecording] == false {
                     SettingRow(title: L10n.tr("需要屏幕录制权限", "Screen recording permission required"), detail: L10n.tr("在系统设置里打开 Tact 的屏幕录制，然后重新打开 Tact", "Allow Tact to record the screen in System Settings, then reopen Tact")) {
                         Button(L10n.tr("打开系统设置", "Open System Settings")) { Permission.screenRecording.openSystemSettings() }
@@ -71,7 +71,7 @@ private struct WeChatCard: View {
                 }
             }
         }
-        .animation(Motion.spring, value: model.wechat)
+        .animation(Motion.spring, value: settings.wechat)
     }
 }
 

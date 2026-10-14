@@ -10,7 +10,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 TAG="v0.6.0"
 COMMIT="d81235049384534c167caea52b85a694f6103d14"
 # Names the tag and the build options below; a change to either rebuilds.
-BUILD_ID="$TAG static metal-embedded no-ssl"
+BUILD_ID="$TAG static metal-embedded no-ssl prefix-map"
 SRC="$REPO/.cache/llama.cpp-$TAG"
 OUT="$REPO/engine/bin/llama-server"
 
@@ -36,7 +36,10 @@ fi
 # so it runs on any Apple silicon Mac; no OpenSSL, which would tie it to a
 # Homebrew install: it only ever serves plain HTTP on loopback, and Tact
 # downloads the models itself.
+# Source paths in asserts and logs name the checkout, not this Mac's folders.
+PREFIX_MAP="-ffile-prefix-map=$SRC=llama.cpp"
 cmake -S "$SRC" -B "$SRC/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+  -DCMAKE_C_FLAGS="$PREFIX_MAP" -DCMAKE_CXX_FLAGS="$PREFIX_MAP" -DCMAKE_OBJC_FLAGS="$PREFIX_MAP" \
   -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF \
   -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON >/dev/null
 cmake --build "$SRC/build" --target llama-server --config Release -j "$(sysctl -n hw.ncpu)" >/dev/null

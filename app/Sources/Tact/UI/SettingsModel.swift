@@ -84,7 +84,7 @@ final class SettingsModel: ObservableObject {
     @Published var trigger: TriggerChoice
     @Published var comboSpec: String
     @Published var insertMethod: InsertMethod
-    @Published private(set) var wechat: Bool
+    var wechat: Bool { platformSettings.wechat }
     @Published var launchAtLogin: Bool
     @Published var loginItemNote: String?
 
@@ -122,7 +122,6 @@ final class SettingsModel: ObservableObject {
         trigger = TriggerChoice.from(hotkey)
         comboSpec = TriggerChoice.from(hotkey) == .combo ? hotkey : "ctrl+option+space"
         insertMethod = InsertMethod(rawValue: file.string("app.insert_method") ?? "") ?? .auto
-        wechat = file.bool("app.wechat") ?? false
         launchAtLogin = LoginItem.isEnabled
         historyLimit = Int(file.number("context.history_limit") ?? 20)
         stylePath = AppConfig.expand(file.string("style.file") ?? "~/.tact/style.md")
@@ -181,11 +180,7 @@ final class SettingsModel: ObservableObject {
 
     /// Turning WeChat on asks for screen recording, without which nothing
     /// in its window can be read.
-    func setWeChat(_ on: Bool) {
-        if on && !Permission.screenRecording.isGranted { Permission.screenRecording.request() }
-        wechat = on
-        update { $0.set("app.wechat", on) }
-    }
+    func setWeChat(_ on: Bool) { platformSettings.setWeChat(on) }
 
     func setLaunchAtLogin(_ enabled: Bool) {
         loginItemNote = LoginItem.set(enabled)

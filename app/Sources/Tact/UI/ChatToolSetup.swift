@@ -177,15 +177,36 @@ final class AddChatToolModel: ObservableObject, Identifiable {
             let kit = resources.appendingPathComponent("PluginSDK", isDirectory: true)
             if FileManager.default.fileExists(atPath: kit.path) { NSWorkspace.shared.open(kit); return }
         }
+        // `swift run`: the repository's copy. Debug builds only, so a
+        // released binary carries no path from the machine it was built on.
+        #if DEBUG
         let template = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("plugins/template", isDirectory: true)
         NSWorkspace.shared.open(template)
+        #endif
     }
 }
 
 /// The add sheet: drop a plugin in, see what's added and what's coming,
 /// and, without a plugin, a message to hand to whoever can write one.
+/// WeChat is built in: it is switched on, not imported, so it sits apart
+/// from plugins wherever chat tools are added.
+struct BuiltInWeChatCard: View {
+    @ObservedObject var settings: PlatformSettings
+
+    var body: some View {
+        Card(title: L10n.tr("内置 · 不需要插件", "Built in · No plugin needed")) {
+            SettingRow(title: L10n.tr("微信", "WeChat"),
+                       detail: L10n.tr("在本机截图识别当前聊天和输入框，打开开关就能用。", "Reads the open chat and input box from the screen on your Mac. Switch it on to use it."),
+                       divider: false) {
+                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { settings.wechat }, set: { settings.setWeChat($0) }))
+                    .labelsHidden().toggleStyle(.switch)
+            }
+        }
+    }
+}
+
 struct AddChatToolSheet: View {
     @ObservedObject var model: AddChatToolModel
     @ObservedObject private var settings: PlatformSettings
@@ -207,6 +228,7 @@ struct AddChatToolSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    BuiltInWeChatCard(settings: settings)
                     VStack(alignment: .leading, spacing: 8) {
                         dropZone
                         Text(L10n.tr("导入只检查文件，不会运行插件；打开开关时才会先检测连接。", "Import only checks files. The plugin runs for a connection check when you enable it."))

@@ -278,10 +278,10 @@ struct QuickPanelView: View {
     /// WeChat is built in: listed once it is on, or while it is installed
     /// and could be.
     private static let weChatInstalled = NSWorkspace.shared.urlForApplication(withBundleIdentifier: WeChatScreen.bundleID) != nil
-    private var showsWeChat: Bool { settings.wechat || Self.weChatInstalled }
+    private var showsWeChat: Bool { platforms.wechat || Self.weChatInstalled }
 
     private var weChatState: (StatusTone, String) {
-        if !settings.wechat { return (.neutral, L10n.tr("未启用", "Disabled")) }
+        if !platforms.wechat { return (.neutral, L10n.tr("未启用", "Disabled")) }
         if settings.permissions[.screenRecording] == false { return (.warn, L10n.tr("需要屏幕录制权限", "Needs Screen Recording access")) }
         return (.ok, L10n.tr("已启用 · 截图识别", "Enabled · screen recognition"))
     }
@@ -291,10 +291,10 @@ struct QuickPanelView: View {
             Eyebrow(text: L10n.tr("聊天工具", "Chat tools")).padding(.horizontal, 4)
             Card {
                 if showsWeChat {
-                    QuickToolRow(name: L10n.tr("微信", "WeChat"), tone: weChatState.0, status: weChatState.1, enabled: settings.wechat,
+                    QuickToolRow(name: L10n.tr("微信", "WeChat"), tone: weChatState.0, status: weChatState.1, enabled: platforms.wechat,
                                  checking: false, toggleDisabled: false,
                                  open: { actions.openSettings(.chat) },
-                                 setEnabled: { on in withAnimation(Motion.quick) { settings.setWeChat(on) } })
+                                 setEnabled: { on in withAnimation(Motion.quick) { platforms.setWeChat(on) } })
                     if !platforms.entries.isEmpty { RowDivider(inset: 46) }
                 }
                 if platforms.entries.isEmpty && !showsWeChat {

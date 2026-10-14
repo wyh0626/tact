@@ -67,6 +67,9 @@ BIN="$(cd "$REPO/app" && swift build -c release --show-bin-path)/Tact"
 step "组装"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/PluginSDK/template"
 cp "$BIN" "$APP/Contents/MacOS/Tact"
+# The debug map names every source file by its path on this Mac; a
+# shipped app has no use for it.
+strip -S "$APP/Contents/MacOS/Tact"
 cp "$WORK/tactd" "$APP/Contents/MacOS/tactd"
 cp "$REPO/engine/bin/llama-server" "$APP/Contents/MacOS/llama-server"
 cp "$REPO/engine/bin/llama.cpp-LICENSE" "$APP/Contents/Resources/llama.cpp-LICENSE"

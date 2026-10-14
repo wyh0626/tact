@@ -10,7 +10,7 @@ struct PracticeStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            StepTitle(eyebrow: L10n.tr("试一试", "Try it"), title: L10n.tr("先在这里练一次", "Practice here first"),
+            StepTitle(eyebrow: OnboardingStep.practice.eyebrow, title: L10n.tr("先在这里练一次", "Practice here first"),
                       detail: L10n.tr("\(PracticeChat.friend)约你周六吃火锅，用快捷键回他。这里的消息不会真的发出去。", "\(PracticeChat.friend) invited you for hot pot on Saturday. Use the shortcut to reply. These messages stay in this practice."))
             chat
             if !keyboardReady {

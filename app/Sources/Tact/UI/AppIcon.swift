@@ -7,11 +7,16 @@ struct AppIconView: View {
     var artwork: NSImage? = AppIconView.repositoryArtwork
 
     /// assets/tact-icon-1024.png, for tests and `swift run`; a built app
-    /// shows its icon file instead (see `AppIconImage`).
+    /// shows its icon file instead (see `AppIconImage`). Debug builds only,
+    /// so a released binary carries no path from the machine it was built on.
+    #if DEBUG
     static let repositoryArtwork = NSImage(contentsOf: URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("assets/tact-icon-1024.png"))
+    #else
+    static let repositoryArtwork: NSImage? = nil
+    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -50,6 +55,7 @@ enum MenuBarMark {
 
     /// The repository's copies at every scale, for tests and `swift run`.
     static func repositoryImage() -> NSImage? {
+        #if DEBUG
         let folder = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -62,5 +68,8 @@ enum MenuBarMark {
             image.addRepresentation(rep)
         }
         return image.representations.isEmpty ? nil : image
+        #else
+        return nil
+        #endif
     }
 }

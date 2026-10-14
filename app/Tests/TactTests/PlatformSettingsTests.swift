@@ -11,6 +11,29 @@ struct PlatformSettingsTests {
         }
     }
 
+    /// WeChat is switched on from the chat tools page, the add sheet or the
+    /// first-run guide; each reads this one switch, saved in the config.
+    @Test func weChatIsSwitchedOnWithoutAPlugin() async throws {
+        try await withFixture { settings, configURL, _, _ in
+            #expect(!settings.wechat)
+            settings.setWeChat(true)
+            #expect(settings.wechat && settings.problem == nil && settings.entries.isEmpty)
+            let on = try ConfigFile.load(from: configURL.path)
+            #expect(on.bool("app.wechat") == true)
+            settings.setWeChat(false)
+            let off = try ConfigFile.load(from: configURL.path)
+            #expect(off.bool("app.wechat") == false)
+        }
+    }
+
+    @Test func onboardingStepsAreNumberedAsInTheirList() {
+        L10n.$overrideLanguage.withValue(.simplifiedChinese) {
+            #expect(OnboardingStep.permissions.eyebrow == "02 · 授权")
+            #expect(OnboardingStep.chat.eyebrow == "05 · 聊天工具")
+            #expect(OnboardingStep.done.eyebrow == "06 · 完成")
+        }
+    }
+
     @Test func aPluginAppearsOnlyAfterItsPackageIsImported() async throws {
         try await withFixture { settings, configURL, _, _ in
             #expect(!settings.entries.contains { $0.name == ExamplePlugin.name })
