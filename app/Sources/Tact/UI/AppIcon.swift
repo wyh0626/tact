@@ -53,6 +53,26 @@ enum MenuBarMark {
         return image
     }
 
+    /// The mark with a dot in its top right corner, set off by a clear ring,
+    /// while a new version waits.
+    static func image(badged: Bool) -> NSImage {
+        let mark = image()
+        guard badged else { return mark }
+        let badged = NSImage(size: mark.size, flipped: false) { rect in
+            mark.draw(in: rect)
+            let dot = NSRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 6, height: 6)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: dot.insetBy(dx: -1.5, dy: -1.5)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        badged.isTemplate = true
+        badged.accessibilityDescription = L10n.tr("Tact，有新版本", "Tact, update available")
+        return badged
+    }
+
     /// The repository's copies at every scale, for tests and `swift run`.
     static func repositoryImage() -> NSImage? {
         #if DEBUG

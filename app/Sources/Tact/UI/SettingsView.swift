@@ -702,6 +702,8 @@ private struct PrivacyPane: View {
                         detail: L10n.tr("顶部栏截图和文字识别、会话列表、预取的消息（5 分钟后丢弃）、你的 API Key（钥匙串）", "Header screenshots and OCR, chat lists, prefetched messages (discarded after 5 minutes), and your API key (in Keychain)."))
                 FlowRow(symbol: "arrow.up.right", title: L10n.tr("发给你选的模型服务商", "Sent to your selected model provider"),
                         detail: L10n.tr("触发时当前会话最近 \(model.historyLimit) 条消息、你在输入框里写的意图、表达风格。选「本机」模型时这些都留在这台 Mac 上", "When triggered: the current chat’s last \(model.historyLimit) messages, the intent you type, and your writing style. With a local model, all of this stays on this Mac."))
+                FlowRow(symbol: "arrow.down.circle", title: L10n.tr("检查更新时访问 GitHub", "GitHub, when checking for updates"),
+                        detail: L10n.tr("读取最新版本的信息，有新版时下载安装包。请求里只有 Tact 的版本号，可以在「关于」里关掉自动检查", "Reads the latest version’s details and downloads the installer when there is one. Requests carry only Tact’s version number. Turn off automatic checks in About."))
                 FlowRow(symbol: "nosign", title: L10n.tr("不会发给任何其他人", "Shared with no one else"),
                         detail: L10n.tr("没有使用统计上报，没有云同步", "No analytics reporting or cloud sync."), divider: false)
             }
@@ -830,6 +832,7 @@ private struct Meter: View {
 
 private struct AboutPane: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject private var updates = Updates.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -839,6 +842,22 @@ private struct AboutPane: View {
                     Text("Tact").font(Theme.display(22)).foregroundStyle(Theme.ink)
                     Text(L10n.tr("版本 \(version)", "Version \(version)")).font(Theme.mono(11)).foregroundStyle(.secondary)
                     Text(L10n.tr("不知道怎么回？按快捷键，回复就在输入框里。", "Unsure what to say? Press the shortcut for a reply in your chat input.")).font(.system(size: 13))
+                }
+            }
+            if updates.isAvailable {
+                Card(title: L10n.tr("更新", "Updates")) {
+                    SettingRow(title: L10n.tr("自动检查更新", "Check for updates automatically"),
+                               detail: L10n.tr("每天到 GitHub 看一次有没有新版本", "Looks for a new version on GitHub once a day")) {
+                        Toggle("", isOn: Binding(get: { updates.checksAutomatically }, set: { updates.setChecksAutomatically($0) }))
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+                    SettingRow(title: L10n.tr("检查更新", "Check for updates"),
+                               detail: L10n.tr("有新版本时，看过改动再决定是否安装，装好后自动重新打开", "When there is a new version, see what changed, then install it and Tact reopens"),
+                               divider: false) {
+                        Button(L10n.tr("立即检查", "Check now")) { updates.check() }
+                            .buttonStyle(SecondaryButtonStyle())
+                            .disabled(!updates.canCheck)
+                    }
                 }
             }
             Card(title: L10n.tr("文件位置", "File locations")) {

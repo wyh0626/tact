@@ -11,6 +11,11 @@ BUILD_NUMBER="${TACT_BUILD:-$(date +%Y%m%d%H%M)}"
 BUNDLE_ID="io.github.wyh0626.tact"
 # TACT_SIGN_IDENTITY names another certificate; "-" forces an ad hoc signature.
 IDENTITY="${TACT_SIGN_IDENTITY:-Tact Local Signing}"
+# Sparkle reads updates from the latest GitHub release and installs only an
+# archive signed with the private half of this key, which stays in the
+# keychain of whoever publishes (scripts/build-appcast.sh).
+UPDATE_FEED="https://github.com/wyh0626/tact/releases/latest/download/appcast.xml"
+UPDATE_KEY="vOkDbkYbnfymA98LtOqOgVVX80TdWLKv3V9O0CraRZM="
 
 step() { printf '\n→ %s\n' "$1"; }
 WORK="$(mktemp -d)"
@@ -62,14 +67,21 @@ step "本机模型运行时"
 
 step "编译应用"
 (cd "$REPO/app" && swift build -c release)
-BIN="$(cd "$REPO/app" && swift build -c release --show-bin-path)/Tact"
+BIN_DIR="$(cd "$REPO/app" && swift build -c release --show-bin-path)"
+BIN="$BIN_DIR/Tact"
+SPARKLE_LICENSE="$REPO/app/.build/artifacts/sparkle/Sparkle/LICENSE"
 
 step "组装"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/PluginSDK/template"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources/PluginSDK/template"
 cp "$BIN" "$APP/Contents/MacOS/Tact"
 # The debug map names every source file by its path on this Mac; a
 # shipped app has no use for it.
 strip -S "$APP/Contents/MacOS/Tact"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Tact"
+/usr/bin/ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+# Its XPC services are for sandboxed apps only; Tact isn't one.
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
+cp "$SPARKLE_LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE"
 cp "$WORK/tactd" "$APP/Contents/MacOS/tactd"
 cp "$REPO/engine/bin/llama-server" "$APP/Contents/MacOS/llama-server"
 cp "$REPO/engine/bin/llama.cpp-LICENSE" "$APP/Contents/Resources/llama.cpp-LICENSE"
@@ -109,6 +121,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Tact contributors</string>
+  <key>SUFeedURL</key><string>$UPDATE_FEED</string>
+  <key>SUPublicEDKey</key><string>$UPDATE_KEY</string>
 </dict>
 </plist>
 EOF
@@ -129,9 +143,15 @@ fi
 # only a Developer ID certificate is notarized, so only it gets them.
 SIGN_FLAGS=(--force --sign "$SIGN")
 case "$SIGN" in "Developer ID Application:"*) SIGN_FLAGS+=(--options runtime --timestamp) ;; esac
+# Sparkle's helpers first, then the framework around them, each on its own:
+# --deep would sign them all alike.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 if ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID.engine" "$APP/Contents/MacOS/tactd" ||
    ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID.telegram" "$WORK/telegram/tact-telegram" ||
    ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID.llama" "$APP/Contents/MacOS/llama-server" ||
+   ! codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Autoupdate" ||
+   ! codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Updater.app" ||
+   ! codesign "${SIGN_FLAGS[@]}" "$SPARKLE" ||
    ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID" "$APP"; then
   cat >&2 <<MSG
 

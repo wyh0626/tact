@@ -2,12 +2,14 @@
 # Packs dist/Tact.app into dist/Tact-<version>-<arch>.dmg for download: the
 # app beside a link to Applications, to drag across. Signed with a Developer
 # ID certificate and given a notarytool keychain profile (TACT_NOTARY_PROFILE),
-# the DMG is notarized and stapled, so it opens without Gatekeeper's warning.
+# the DMG is notarized and stapled, so it opens without Gatekeeper's warning,
+# and build-appcast.sh writes the update feed for it (release notes from
+# TACT_RELEASE_NOTES, a Markdown file).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$REPO/dist/Tact.app"
-[ -d "$APP" ] || { echo "没找到 $APP，先运行 scripts/build-app.sh"; exit 1; }
+[ -d "$APP" ] || { echo "没找到 ${APP}，先运行 scripts/build-app.sh"; exit 1; }
 codesign --verify --strict --deep "$APP"
 
 VERSION="$(defaults read "$APP/Contents/Info.plist" CFBundleShortVersionString)"
@@ -29,8 +31,10 @@ case "$SIGNER" in
   if [ -n "${TACT_NOTARY_PROFILE:-}" ]; then
     xcrun notarytool submit "$DMG" --keychain-profile "$TACT_NOTARY_PROFILE" --wait
     xcrun stapler staple "$DMG"
+    # Stapling changes the DMG, so the update signature comes after it.
+    "$REPO/scripts/build-appcast.sh" ${TACT_RELEASE_NOTES:+"$TACT_RELEASE_NOTES"}
   else
-    echo "已用「$SIGNER」签名，但没有设置 TACT_NOTARY_PROFILE，DMG 没有公证。"
+    echo "已用「${SIGNER}」签名，但没有设置 TACT_NOTARY_PROFILE，DMG 没有公证。"
   fi
   ;;
 *)

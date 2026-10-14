@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configProblem: String?
     private var launchedAt = Date.distantFuture
     private var languageObserver: NSObjectProtocol?
+    private var updateReminder: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = LanguageSettings.shared
@@ -41,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let w = WindowManager(controller: c)
         windows = w
         buildStatusItem()
+        Updates.shared.start()
+        updateReminder = Updates.shared.$waiting.sink { [weak self] version in
+            self?.statusItem?.button?.image = MenuBarMark.image(badged: version != nil)
+        }
         Log.info("Tact 已启动：在聊天工具里按 \(c.hotKeyDisplay) 生成建议")
         launchedAt = Date()
 

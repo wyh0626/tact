@@ -219,6 +219,7 @@ Telegram for macOS 不开放辅助功能，所以桌面端和微信一样靠截�
 - 反馈日志默认不含任何聊天文字，会话 ID 也做了哈希。
 - 应用日志 `~/.tact/app.log` 不记会话名和内容；OCR 测试模式的识别结果只打印在终端。
 - 引擎 socket 权限是 600，只有你自己的账号能连。
+- 检查更新由 [Sparkle](https://sparkle-project.org) 访问 GitHub 上最新版本的 `appcast.xml`，请求里只有 Tact 和 Sparkle 的版本号，不带系统信息和使用数据。第二次打开时会先问要不要自动检查，之后可以在「设置 → 关于」里改。下载的更新包要通过发布者密钥的签名校验，签名不对就不装。
 - 自定义插件作为当前用户的外部进程运行，拥有该用户可用的文件和网络权限；manifest 的能力声明不是权限限制。导入默认停用，检测或启用前确认代码来源。
 - 在公司里给别人用之前，先确认公司对用 AI 处理聊天内容的要求。
 
@@ -276,13 +277,14 @@ TACT_SIGN_IDENTITY=- TACT_VERSION=0.1.0 ./scripts/build-app.sh
 ./scripts/build-dmg.sh
 ```
 
-把 `dist/Tact-0.1.0-arm64.dmg`（和实验性的 `dist/plugins/telegram.zip`）上传到 GitHub Release，`build-dmg.sh` 最后打印的 SHA-256 一并写进发布说明。
+把 `dist/Tact-0.1.0-arm64.dmg`、`dist/appcast.xml`（和实验性的 `dist/plugins/telegram.zip`）上传到 GitHub Release，`build-dmg.sh` 最后打印的 SHA-256 一并写进发布说明。
 
 - **没有苹果开发者账号**：用临时签名（`TACT_SIGN_IDENTITY=-`）打包，不要把本机的自签名证书带进发布版。下载的人第一次打开要到「系统设置 → 隐私与安全性」点「仍要打开」，每次更新都要重新授予辅助功能和屏幕录制权限。
 - **有苹果开发者账号**：先用 `xcrun notarytool store-credentials tact-notary` 保存公证凭据，再用 `TACT_SIGN_IDENTITY="Developer ID Application: 名字 (团队ID)"` 打包，`TACT_NOTARY_PROFILE=tact-notary ./scripts/build-dmg.sh` 会签名、公证并装订 DMG。这样用户双击就能打开，升级后权限也保留。
+- **应用内更新**：Tact 用 [Sparkle](https://sparkle-project.org) 读取最新 Release 里的 `appcast.xml`，只安装用发布者密钥签过名的更新包。第一次发布前，在「终端」应用里运行一次 `app/.build/artifacts/sparkle/Sparkle/bin/generate_keys`：私钥存进钥匙串，打印出的公钥填进 `scripts/build-app.sh` 的 `UPDATE_KEY`；再用 `generate_keys -x 文件名` 导出私钥，存到密码管理器之类的安全地方。私钥丢了，已安装的用户就收不到更新了。公证之后，`build-dmg.sh` 会调用 `scripts/build-appcast.sh` 签名 DMG、写出 `dist/appcast.xml`；`TACT_RELEASE_NOTES` 指向一份 Markdown 时，内容会显示在更新窗口里。`appcast.xml` 漏传的话，已安装的用户就收不到这一版。
 - **Telegram 插件**：发布版用 `TACT_TELEGRAM_APP_ID`、`TACT_TELEGRAM_APP_HASH` 注入 Tact 自己注册的应用，不写进源码。
 - 目前只打 Apple Silicon（arm64）的包。
 
 ## 许可证
 
-[MIT](../LICENSE)。打包进应用的 [llama.cpp](https://github.com/ggml-org/llama.cpp) 同为 MIT（许可证随应用放在 `Contents/Resources/llama.cpp-LICENSE`）；Telegram 插件依赖的 [gotd](https://github.com/gotd/td) 为 MIT。
+[MIT](../LICENSE)。打包进应用的 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 [Sparkle](https://github.com/sparkle-project/Sparkle) 同为 MIT（许可证随应用放在 `Contents/Resources/llama.cpp-LICENSE`、`Sparkle-LICENSE`）；Telegram 插件依赖的 [gotd](https://github.com/gotd/td) 为 MIT。

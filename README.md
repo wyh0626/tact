@@ -43,7 +43,7 @@
 
 **1 · 安装。** 从 [Releases](https://github.com/wyh0626/tact/releases/latest) 下载 `Tact-版本号-arm64.dmg`，把 Tact 拖进「应用程序」。打开后它只在菜单栏显示一只小狗，没有主窗口。
 
-<sub>需要 macOS 14 及以上、Apple Silicon。安装包经过苹果公证，双击就能打开。</sub>
+<sub>需要 macOS 14 及以上、Apple Silicon。安装包经过苹果公证，双击就能打开。以后有新版本，Tact 会在菜单栏提示，点一下就装好。</sub>
 
 **2 · 跟着引导走。** 打开辅助功能和屏幕录制权限，选一个模型，再在「试一试」里拿一段模拟聊天练一遍。快捷键可以在设置里换成你顺手的。
 
@@ -89,6 +89,7 @@
 - 截图只在本机内存里识别，不保存，不上传。
 - 发给模型的只有会话名、最近的聊天文字、你的草稿和表达风格；用本机模型时这些都不出这台 Mac。
 - 统计只记次数、长度和耗时，不记聊天文字。
+- 检查更新只访问 GitHub，请求里只有 Tact 的版本号；可以在「设置 → 关于」里关掉自动检查。
 
 ## 从源码构建
 
@@ -104,4 +105,4 @@ TACT_SIGN_IDENTITY=- ./scripts/build-app.sh && ./scripts/build-dmg.sh   # 打包
 
 ## 许可证
 
-[MIT](LICENSE)。内置的 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 Telegram 插件依赖的 [gotd](https://github.com/gotd/td) 也都是 MIT。
+[MIT](LICENSE)。内置的 [llama.cpp](https://github.com/ggml-org/llama.cpp)、负责更新的 [Sparkle](https://github.com/sparkle-project/Sparkle) 和 Telegram 插件依赖的 [gotd](https://github.com/gotd/td) 也都是 MIT。

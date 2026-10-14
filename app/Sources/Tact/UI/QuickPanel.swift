@@ -213,6 +213,7 @@ struct QuickPanelView: View {
     @ObservedObject var speed: ModelSettings
     let status: QuickPanelStatus
     let actions: QuickPanelActions
+    @ObservedObject var updates = Updates.shared
     @State private var savingSpeed = false
     @State private var speedProblem: String?
 
@@ -220,6 +221,7 @@ struct QuickPanelView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             statusLine
+            if let version = updates.waiting { update(version) }
             chatTools
             model
             footer
@@ -273,6 +275,28 @@ struct QuickPanelView: View {
             }
         }
         .padding(.horizontal, 4)
+    }
+
+    /// A version a background check found. Sparkle's window, which this
+    /// opens, says what changed and installs it.
+    private func update(_ version: String) -> some View {
+        Card {
+            Button { updates.check() } label: {
+                HStack(spacing: 10) {
+                    IconTile(symbol: "arrow.down.circle", size: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(L10n.tr("有新版本 \(version)", "Tact \(version) is available"))
+                            .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink).lineLimit(1)
+                        Text(L10n.tr("看看改了什么，再决定装不装", "See what’s new before installing"))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+            }
+            .buttonStyle(RowButtonStyle())
+        }
     }
 
     /// WeChat is built in: listed once it is on, or while it is installed

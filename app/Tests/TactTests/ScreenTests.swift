@@ -268,6 +268,22 @@ struct ScreenTests {
         try file.write(to: AppConfig.configPath)
     }
 
+    /// A version a background check found, at the top of the panel.
+    @Test func quickPanelWithAnUpdateWaiting() {
+        let model = SettingsModel(controller: makeController())
+        model.showAsSetUp()
+        let updates = Updates()
+        updates.noticed("0.1.3")
+        let actions = QuickPanelActions(openSettings: { _ in }, openOnboarding: {}, quit: {}, speedSaved: { _ in })
+        for dark in [false, true] {
+            let panel = QuickPanelView(settings: model, platforms: model.platformSettings, speed: model.modelSettings,
+                                       status: QuickPanelStatus(hotkey: "双击 ⌃", problem: nil), actions: actions, updates: updates)
+                .frame(width: QuickPanelController.width).background(Theme.canvas)
+            #expect(Snapshot.render(panel, name: "quick-panel-update-\(dark ? "dark" : "light")",
+                                    size: CGSize(width: 320, height: 480), dark: dark) != nil)
+        }
+    }
+
     @Test func onboardingSteps() {
         let model = OnboardingModel(controller: makeController())
         for step in OnboardingStep.allCases {

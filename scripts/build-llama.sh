@@ -28,7 +28,7 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 actual="$(git -C "$SRC" rev-parse HEAD)"
 if [ "$actual" != "$COMMIT" ]; then
-  echo "llama.cpp $TAG 的提交是 $actual，和固定的 $COMMIT 不一致，停止编译" >&2
+  echo "llama.cpp $TAG 的提交是 ${actual}，和固定的 ${COMMIT} 不一致，停止编译" >&2
   exit 1
 fi
 
