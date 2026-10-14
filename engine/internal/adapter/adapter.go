@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wyh0626/tact/engine/internal/shellenv"
 )
 
 // ErrUnsupported is returned when the script exits with status 3, meaning it
@@ -137,6 +139,9 @@ func (s *Script) run(ctx context.Context, args ...string) ([]byte, error) {
 
 	argv := append(append([]string{}, s.Command[1:]...), args...)
 	cmd := exec.CommandContext(ctx, s.Command[0], argv...)
+	// The user's terminal environment: a plugin's CLI is usually installed
+	// where only the login shell's PATH reaches.
+	cmd.Env = shellenv.Environ()
 	// Run the script in its own process group and kill the whole group on
 	// timeout; otherwise a CLI it spawned keeps stdout open and Run blocks.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

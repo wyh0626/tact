@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wyh0626/tact/engine/internal/shellenv"
 )
 
 // exampleScript is an adapter answering every operation from fixed JSON,
@@ -74,6 +76,30 @@ func TestUnsupportedAndFailure(t *testing.T) {
 	_, err := s.Chats(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("stderr must surface in the error, got %v", err)
+	}
+}
+
+// A plugin runs with the login shell's environment, not the engine's bare
+// one: its CLI is found where Terminal finds it.
+func TestScriptsRunWithTheShellEnvironment(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "a.sh")
+	body := "#!/bin/sh\nprintf '{\"chats\":[{\"id\":\"1\",\"title\":\"%s\"}]}' \"$PATH\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &Script{Command: []string{script}, Timeout: 20 * time.Second}
+	chats, err := s.Chats(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want string
+	for _, kv := range shellenv.Environ() {
+		if strings.HasPrefix(kv, "PATH=") {
+			want = strings.TrimPrefix(kv, "PATH=")
+		}
+	}
+	if len(chats) != 1 || want == "" || chats[0].Title != want {
+		t.Fatalf("the script saw PATH %q, want %q", chats[0].Title, want)
 	}
 }
 

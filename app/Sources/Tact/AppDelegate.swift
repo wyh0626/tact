@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.controller?.overlay.hide()
             }
         }
+        // Opened straight from the disk image: move first, before anything starts.
+        if Relocation.offerMove() { return }
         AppConfig.bootstrapIfNeeded()
         let (cfg, problem) = AppConfig.load()
         configProblem = problem

@@ -18,6 +18,7 @@ import (
 
 	"github.com/wyh0626/tact/engine/internal/config"
 	"github.com/wyh0626/tact/engine/internal/server"
+	"github.com/wyh0626/tact/engine/internal/shellenv"
 	"github.com/wyh0626/tact/engine/internal/suggest"
 )
 
@@ -91,6 +92,8 @@ func run(ctx context.Context, sub string, cfg config.Config, svc *suggest.Servic
 			defer cancel()
 			go cancelOnEOF(os.Stdin, cancel)
 		}
+		// Ask the login shell for the plugins' environment before they first run.
+		go shellenv.Environ()
 		go svc.Warm(ctx)
 		if err := server.Serve(ctx, cfg.Socket, svc, logger.Printf); err != nil {
 			logger.Print(err)

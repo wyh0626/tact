@@ -106,6 +106,8 @@ example-chat/
 
 宿主在 `entrypoint` 后追加操作名和参数，标准输出必须是单个 UTF-8 JSON 对象，不应混入调试日志；日志与错误写入标准错误，并避免凭据、access hash 和聊天正文。
 
+插件以用户终端里的环境运行：引擎启动时在后台以交互登录方式运行一次用户的默认 shell（`$SHELL -i -l`，不支持的 shell 改用 zsh），取它读完启动文件后的环境变量，包括 `PATH`、代理设置等。所以插件依赖的命令行工具，只要在终端里能直接运行，插件里也能找到，不必自己拼 `/usr/local/bin`、`/opt/homebrew/bin` 之类的目录。读取期间设置了 `TACT_RESOLVING_ENVIRONMENT=1`，用户可以在启动文件里据此跳过只适合真实终端的内容；超过 10 秒或失败时，改用应用自己的环境，并在 `PATH` 末尾补上 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。
+
 ### `chats`：会话列表
 
 ```bash
