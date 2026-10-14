@@ -17,7 +17,7 @@ Press Tab to accept it. Edit and send it yourself.
 
 Requires macOS 14 or later and Apple Silicon.
 
-1. Download the DMG from [Releases](https://github.com/wyh0626/tact/releases/latest), drag Tact into Applications, and open it. Look for the dog in the menu bar. For an unnotarized build, macOS may require **System Settings → Privacy & Security → Open Anyway**.
+1. Download the DMG from [Releases](https://github.com/wyh0626/tact/releases/latest), drag Tact into Applications, and open it. Look for the dog in the menu bar. The DMG is notarized by Apple, so it opens with a double-click. Requires macOS 14 or later on Apple Silicon.
 2. Follow the setup guide to grant Accessibility and Screen Recording permissions, choose a model, and practice with a sample conversation.
 3. Enable WeChat in **Settings → Chat tools**, or import a plugin for another chat app. Focus the chat input and press the shortcut, which defaults to double-pressing Control.
 
