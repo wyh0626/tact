@@ -9,9 +9,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windows: WindowManager?
     private var configProblem: String?
     private var launchedAt = Date.distantFuture
+    private var languageObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = LanguageSettings.shared
         NSApp.mainMenu = Self.makeMainMenu()
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .tactLanguageDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                NSApp.mainMenu = Self.makeMainMenu()
+                self?.windows?.refreshLanguage()
+                self?.configProblem = AppConfig.load().1
+                self?.controller?.overlay.hide()
+            }
+        }
         AppConfig.bootstrapIfNeeded()
         let (cfg, problem) = AppConfig.load()
         configProblem = problem
@@ -38,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
         controller?.shutdown()
     }
 
@@ -64,22 +77,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 Tact", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L10n.tr("退出 Tact", "Quit Tact"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         main.addItem(withTitle: "Tact", action: nil, keyEquivalent: "").submenu = appMenu
 
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z").keyEquivalentModifierMask = [.command, .shift]
+        let edit = NSMenu(title: L10n.tr("编辑", "Edit"))
+        edit.addItem(withTitle: L10n.tr("撤销", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: L10n.tr("重做", "Redo"), action: Selector(("redo:")), keyEquivalent: "z").keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        main.addItem(withTitle: "编辑", action: nil, keyEquivalent: "").submenu = edit
+        edit.addItem(withTitle: L10n.tr("剪切", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L10n.tr("拷贝", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L10n.tr("粘贴", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L10n.tr("全选", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(withTitle: L10n.tr("编辑", "Edit"), action: nil, keyEquivalent: "").submenu = edit
 
-        let window = NSMenu(title: "窗口")
-        window.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        main.addItem(withTitle: "窗口", action: nil, keyEquivalent: "").submenu = window
+        let window = NSMenu(title: L10n.tr("窗口", "Window"))
+        window.addItem(withTitle: L10n.tr("关闭", "Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        main.addItem(withTitle: L10n.tr("窗口", "Window"), action: nil, keyEquivalent: "").submenu = window
         return main
     }
 
@@ -111,10 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 quit: { NSApp.terminate(nil) },
                 speedSaved: { [weak self] speed in self?.windows?.openSettingsModel?.modelSettings.adoptSpeed(from: speed) })
-            return AnyView(QuickPanelView(settings: model, platforms: model.platformSettings, speed: ModelSettings(file: file),
+            let speed = ModelSettings(file: file)
+            return AnyView(LocalizedContent { QuickPanelView(settings: model, platforms: model.platformSettings, speed: speed,
                                           status: QuickPanelStatus(hotkey: controller.hotKeyDisplay,
                                                                    problem: controller.hotKeyProblem ?? self.configProblem),
-                                          actions: actions))
+                                          actions: actions) })
         }
     }
 }

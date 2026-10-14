@@ -10,11 +10,11 @@ struct PracticeStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            StepTitle(eyebrow: "试一试", title: "先在这里练一次",
-                      detail: "\(PracticeChat.friend)约你周六吃火锅，用快捷键回他。这里的消息不会真的发出去。")
+            StepTitle(eyebrow: L10n.tr("试一试", "Try it"), title: L10n.tr("先在这里练一次", "Practice here first"),
+                      detail: L10n.tr("\(PracticeChat.friend)约你周六吃火锅，用快捷键回他。这里的消息不会真的发出去。", "\(PracticeChat.friend) invited you for hot pot on Saturday. Use the shortcut to reply. These messages stay in this practice."))
             chat
             if !keyboardReady {
-                Label("快捷键要等辅助功能权限打开后才生效，可以回到上一步打开。", systemImage: "exclamationmark.triangle")
+                Label(L10n.tr("快捷键要等辅助功能权限打开后才生效，可以回到上一步打开。", "The shortcut needs Accessibility access. Go back to the permissions step to enable it."), systemImage: "exclamationmark.triangle")
                     .font(.system(size: 12)).foregroundStyle(Theme.warn).fixedSize(horizontal: false, vertical: true)
             } else if let note = practice.note {
                 Label(note, systemImage: "info.circle")
@@ -35,10 +35,10 @@ struct PracticeStep: View {
     private var chat: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Monogram(name: String(PracticeChat.friend.dropFirst()), size: 26)
+                Monogram(name: L10n.tr("林", "L"), size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(PracticeChat.friend).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.ink)
-                    Text(practice.working ? "你正在想怎么回…" : "在线").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(practice.working ? L10n.tr("你正在想怎么回…", "Thinking of a reply…") : L10n.tr("在线", "Online")).font(.system(size: 11)).foregroundStyle(.secondary)
                         .contentTransition(.opacity)
                 }
                 Spacer()
@@ -48,7 +48,7 @@ struct PracticeStep: View {
             ScrollViewReader { scroller in
                 ScrollView {
                     VStack(spacing: 6) {
-                        Text("今天 21:38").font(.system(size: 10.5)).foregroundStyle(.tertiary).padding(.bottom, 2)
+                        Text(L10n.tr("今天 21:38", "Today, 21:38")).font(.system(size: 10.5)).foregroundStyle(.tertiary).padding(.bottom, 2)
                         ForEach(practice.messages) { message in
                             PracticeBubble(message: message).id(message.id)
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
@@ -65,7 +65,7 @@ struct PracticeStep: View {
                 }
             }
             RowDivider(inset: 0)
-            TextField("发消息…", text: $practice.draft)
+            TextField(L10n.tr("发消息…", "Message…"), text: $practice.draft)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .focused($typing)
                 .onSubmit { practice.send() }
@@ -90,7 +90,7 @@ struct PracticeStep: View {
                     Image(systemName: done ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 13)).foregroundStyle(done ? Theme.ok : (task == next ? Theme.accent : Color.secondary))
                         .contentTransition(.symbolEffect(.replace))
-                    Text(task.title(hotkey: practice.hotkey))
+                    Text(task.title(hotkey: controller.hotKeyDisplay))
                         .font(.system(size: 12, weight: task == next ? .medium : .regular))
                         .foregroundStyle(done ? Color.secondary : (task == next ? Theme.ink : Color.secondary))
                         .strikethrough(done, color: .secondary)
@@ -98,8 +98,8 @@ struct PracticeStep: View {
             }
             if practice.finished {
                 HStack(spacing: 10) {
-                    Text("都会了。点「继续」接入你的聊天工具。").font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.ok)
-                    Button("再练一次") { practice.restart() }.buttonStyle(QuietButtonStyle())
+                    Text(L10n.tr("都会了。点「继续」接入你的聊天工具。", "You’re ready. Click “Continue” to connect your chat app.")).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.ok)
+                    Button(L10n.tr("再练一次", "Try again")) { practice.restart() }.buttonStyle(QuietButtonStyle())
                 }
                 .padding(.top, 2)
                 .transition(.opacity)

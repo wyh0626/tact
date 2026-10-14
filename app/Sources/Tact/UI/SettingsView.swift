@@ -141,7 +141,7 @@ private struct SettingsSidebar: View {
                 AppIconImage().frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tact").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.ink)
-                    StatusDot(tone: model.engineConnected ? .ok : .warn, text: model.engineConnected ? "引擎已连接" : "引擎未连接")
+                    StatusDot(tone: model.engineConnected ? .ok : .warn, text: model.engineConnected ? L10n.tr("引擎已连接", "Engine connected") : L10n.tr("引擎未连接", "Engine disconnected"))
                         .font(.system(size: 11))
                 }
             }
@@ -204,21 +204,33 @@ private struct SidebarRow: View {
 
 private struct GeneralPane: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject private var language = LanguageSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             StatusCard(model: model)
 
-            Card(title: "触发") {
-                SettingRow(title: "生成建议", detail: "只在已启用的聊天工具在前台时生效。" + model.trigger.note,
+            Card(title: L10n.tr("语言", "Language")) {
+                SettingRow(title: L10n.tr("显示语言", "Display language"),
+                           detail: L10n.tr("更改界面语言，不影响回复语言或表达风格。", "Changes the interface language. Reply language and writing style stay as configured."),
+                           divider: false) {
+                    Picker(L10n.tr("语言", "Language"), selection: $language.selection) {
+                        ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 200)
+                }
+            }
+
+            Card(title: L10n.tr("触发", "Trigger")) {
+                SettingRow(title: L10n.tr("生成建议", "Generate suggestions"), detail: L10n.tr("只在已启用的聊天工具在前台时生效。", "Only active when an enabled chat app is in the foreground. ") + model.trigger.note,
                            divider: model.trigger == .combo) {
                     Picker("", selection: $model.trigger) {
                         ForEach(TriggerChoice.allCases) { Text($0.title).tag($0) }
                     }
-                    .labelsHidden().frame(width: 200)
+                    .labelsHidden().frame(width: 240)
                 }
                 if model.trigger == .combo {
-                    SettingRow(title: "组合键", detail: "比如 ctrl+option+space、ctrl+shift+g", divider: false) {
+                    SettingRow(title: L10n.tr("组合键", "Keyboard shortcut"), detail: L10n.tr("比如 ctrl+option+space、ctrl+shift+g", "For example, ctrl+option+space or ctrl+shift+g"), divider: false) {
                         TextField("", text: $model.comboSpec).frame(width: 170)
                             .onSubmit { model.applyGeneral() }
                     }
@@ -226,20 +238,20 @@ private struct GeneralPane: View {
             }
             .onChange(of: model.trigger) { _, _ in model.applyGeneral() }
 
-            Card(title: "写入") {
-                SettingRow(title: "写入方式", detail: insertDetail, divider: false) {
+            Card(title: L10n.tr("写入", "Insertion")) {
+                SettingRow(title: L10n.tr("写入方式", "Insert using"), detail: insertDetail, divider: false) {
                     Picker("", selection: $model.insertMethod) {
-                        Text("自动").tag(InsertMethod.auto)
-                        Text("总是粘贴").tag(InsertMethod.paste)
-                        Text("辅助功能").tag(InsertMethod.ax)
+                        Text(L10n.tr("自动", "Auto")).tag(InsertMethod.auto)
+                        Text(L10n.tr("总是粘贴", "Paste")).tag(InsertMethod.paste)
+                        Text(L10n.tr("辅助功能", "Accessibility")).tag(InsertMethod.ax)
                     }
                     .labelsHidden().pickerStyle(.segmented).frame(width: 220)
                 }
             }
             .onChange(of: model.insertMethod) { _, _ in model.applyGeneral() }
 
-            Card(title: "启动") {
-                SettingRow(title: "登录时启动", detail: model.loginItemNote ?? "开机后自动在菜单栏待命", divider: false) {
+            Card(title: L10n.tr("启动", "Startup")) {
+                SettingRow(title: L10n.tr("登录时启动", "Launch at login"), detail: model.loginItemNote ?? L10n.tr("开机后自动在菜单栏待命", "Ready in the menu bar when you log in"), divider: false) {
                     Toggle("", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                         .labelsHidden().toggleStyle(.switch)
                         .disabled(!LoginItem.isAvailable)
@@ -252,9 +264,9 @@ private struct GeneralPane: View {
 
     private var insertDetail: String {
         switch model.insertMethod {
-        case .auto: return "英文键盘下短句逐字输入、不碰剪贴板；开着中文输入法或句子较长时粘贴"
-        case .paste: return "总是通过剪贴板粘贴，之后恢复原来的剪贴板"
-        case .ax: return "直接写入输入框，个别应用可能察觉不到变化"
+        case .auto: return L10n.tr("英文键盘下短句逐字输入、不碰剪贴板；开着中文输入法或句子较长时粘贴", "Types short replies with a Latin keyboard; pastes longer replies or when a Chinese input method is active.")
+        case .paste: return L10n.tr("总是通过剪贴板粘贴，之后恢复原来的剪贴板", "Pastes via the clipboard, then restores its previous contents.")
+        case .ax: return L10n.tr("直接写入输入框，个别应用可能察觉不到变化", "Writes directly to the input field. Some apps may not detect the change.")
         }
     }
 }
@@ -265,25 +277,41 @@ private struct StatusCard: View {
 
     var body: some View {
         Card {
-            HStack(spacing: 14) {
-                AppIconImage().frame(width: 40, height: 40)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.engineConnected ? "正在待命" : "引擎没有连接")
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
-                    StatusDot(tone: model.engineConnected ? .ok : .warn,
-                              text: model.engineConnected ? "在聊天输入框里按快捷键" : "会自动重连；一直断开请看 engine.log")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    status.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 12)
+                    shortcuts
                 }
-                .layoutPriority(-1)
-                Spacer(minLength: 12)
-                HStack(spacing: 12) {
-                    shortcut(keys: triggerKeys, label: "生成")
-                    shortcut(keys: ["Tab"], label: "接受")
-                    shortcut(keys: ["Esc"], label: "取消")
+                VStack(alignment: .leading, spacing: 14) {
+                    status
+                    shortcuts
                 }
-                .fixedSize()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+    }
+
+    private var status: some View {
+        HStack(spacing: 14) {
+            AppIconImage().frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.engineConnected ? L10n.tr("正在待命", "Ready") : L10n.tr("引擎没有连接", "Engine disconnected"))
+                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
+                StatusDot(tone: model.engineConnected ? .ok : .warn,
+                          text: model.engineConnected ? L10n.tr("在聊天输入框里按快捷键", "Press the shortcut in a chat input") : L10n.tr("会自动重连；一直断开请看 engine.log", "Reconnecting automatically. Check engine.log if this persists."))
+            }
+        }
+    }
+
+    private var shortcuts: some View {
+        HStack(spacing: 12) {
+            shortcut(keys: triggerKeys, label: L10n.tr("生成", "Generate"))
+            shortcut(keys: ["Tab"], label: L10n.tr("接受", "Accept"))
+            shortcut(keys: ["Esc"], label: L10n.tr("取消", "Dismiss"))
+        }
+        .fixedSize()
     }
 
     private var triggerKeys: [String] {
@@ -308,13 +336,13 @@ private struct PermissionsCard: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Card(title: "权限") {
+        Card(title: L10n.tr("权限", "Permissions")) {
             ForEach(Array(Permission.allCases.enumerated()), id: \.element) { index, permission in
                 SettingRow(title: permission.title, detail: permission.reason, divider: index < Permission.allCases.count - 1) {
                     if model.permissions[permission] == true {
-                        StatusDot(tone: .ok, text: "已授权")
+                        StatusDot(tone: .ok, text: L10n.tr("已授权", "Granted"))
                     } else {
-                        Button("去授权") {
+                        Button(L10n.tr("去授权", "Grant access")) {
                             permission.request()
                             permission.openSystemSettings()
                         }
@@ -361,7 +389,7 @@ struct ModelForm: View {
 
             if showsSaveButton {
                 HStack(spacing: 12) {
-                    Button(settings.testState == .testing ? "测试中…" : "保存并测试连接") {
+                    Button(settings.testState == .testing ? L10n.tr("测试中…", "Testing…") : L10n.tr("保存并测试连接", "Save and test connection")) {
                         Task { await settings.saveAndTest(controller: controller) }
                     }
                     .buttonStyle(PrimaryButtonStyle())
@@ -381,7 +409,7 @@ struct ModelForm: View {
 
     private var openAICardDetail: String {
         if settings.provider.usesSignIn, let status = settings.chatgpt, status.signedIn, let email = status.email {
-            return "ChatGPT 账号 · \(email)"
+            return L10n.tr("ChatGPT 账号 · \(email)", "ChatGPT account · \(email)")
         }
         return ModelProvider.openai.detail
     }
@@ -394,18 +422,18 @@ private struct SpeedCard: View {
     var body: some View {
         let options = settings.speedOptions
         if !options.isEmpty {
-            Card(title: "速度") {
+            Card(title: L10n.tr("速度", "Speed")) {
                 if !options.levels.isEmpty {
-                    SettingRow(title: "推理程度", detail: levelDetail(options), divider: options.fastTier != nil) {
+                    SettingRow(title: L10n.tr("推理程度", "Reasoning"), detail: levelDetail(options), divider: options.fastTier != nil) {
                         Picker("", selection: $settings.reasoningEffort) {
                             ForEach(options.levels, id: \.self) { Text($0.label).tag($0.effort) }
                         }
                         .labelsHidden().pickerStyle(.segmented)
-                        .frame(width: CGFloat(min(options.levels.count, 6)) * 62)
+                        .frame(width: CGFloat(min(options.levels.count, 6)) * 70)
                     }
                 }
                 if let tier = options.fastTier {
-                    SettingRow(title: "快速模式", detail: tier.detail, divider: false) {
+                    SettingRow(title: L10n.tr("快速模式", "Fast mode"), detail: tier.detail, divider: false) {
                         Toggle("", isOn: $settings.fastMode).labelsHidden().toggleStyle(.switch)
                     }
                 }
@@ -415,7 +443,7 @@ private struct SpeedCard: View {
 
     private func levelDetail(_ options: SpeedOptions) -> String {
         let chosen = options.levels.first { $0.effort == settings.reasoningEffort }?.detail ?? ""
-        return chosen.isEmpty ? "越低越快；聊天回复一般用低就够了" : chosen
+        return chosen.isEmpty ? L10n.tr("越低越快；聊天回复一般用低就够了", "Lower is faster. Low is usually enough for chat replies.") : chosen
     }
 }
 
@@ -425,10 +453,10 @@ private struct OpenAIMethodRow: View {
     let compact: Bool
 
     var body: some View {
-        SettingRow(title: "登录方式", detail: compact ? nil : detail) {
+        SettingRow(title: L10n.tr("登录方式", "Sign-in method"), detail: compact ? nil : detail) {
             Picker("", selection: Binding(get: { settings.provider.usesSignIn },
                                           set: { settings.choose($0 ? .chatgpt : .openai) })) {
-                Text("ChatGPT 账号").tag(true)
+                Text(L10n.tr("ChatGPT 账号", "ChatGPT account")).tag(true)
                 Text("API Key").tag(false)
             }
             .labelsHidden().pickerStyle(.segmented).frame(width: 200)
@@ -436,7 +464,7 @@ private struct OpenAIMethodRow: View {
     }
 
     private var detail: String {
-        settings.provider.usesSignIn ? "用 Plus / Pro 套餐额度，不需要 API Key" : "按 OpenAI API 的用量计费"
+        settings.provider.usesSignIn ? L10n.tr("用 Plus / Pro 套餐额度，不需要 API Key", "Uses your Plus / Pro plan. No API key needed.") : L10n.tr("按 OpenAI API 的用量计费", "Billed by OpenAI API usage.")
     }
 }
 
@@ -447,19 +475,19 @@ private struct KeyFields: View {
     var body: some View {
         Card {
             if settings.usesOpenAI { OpenAIMethodRow(settings: settings, compact: compact) }
-            SettingRow(title: "接口地址", detail: compact ? nil : "兼容 OpenAI 的 /v1 地址") {
+            SettingRow(title: L10n.tr("接口地址", "Endpoint"), detail: compact ? nil : L10n.tr("兼容 OpenAI 的 /v1 地址", "An OpenAI-compatible /v1 URL")) {
                 TextField("https://…/v1", text: $settings.baseURL).frame(width: 260)
             }
-            SettingRow(title: "模型", detail: compact ? nil : "填服务商给的模型名") {
-                TextField(settings.provider.defaultModel.isEmpty ? "模型名" : settings.provider.defaultModel,
+            SettingRow(title: L10n.tr("模型", "Model"), detail: compact ? nil : L10n.tr("填服务商给的模型名", "Use the model name from your provider")) {
+                TextField(settings.provider.defaultModel.isEmpty ? L10n.tr("模型名", "Model name") : settings.provider.defaultModel,
                           text: $settings.model).frame(width: 260)
             }
             SettingRow(title: "API Key", detail: keyDetail, divider: false) {
                 HStack(spacing: 8) {
-                    SecureField(settings.hasStoredKey ? "已保存，留空不变" : "sk-…", text: $settings.apiKey)
+                    SecureField(settings.hasStoredKey ? L10n.tr("已保存，留空不变", "Saved; leave blank to keep") : "sk-…", text: $settings.apiKey)
                         .frame(width: settings.hasStoredKey ? 190 : 260)
                     if settings.hasStoredKey {
-                        Button("移除") { settings.forgetKey() }.buttonStyle(SecondaryButtonStyle())
+                        Button(L10n.tr("移除", "Remove")) { settings.forgetKey() }.buttonStyle(SecondaryButtonStyle())
                     }
                 }
                 .disabled(settings.provider.key == .none)
@@ -468,8 +496,8 @@ private struct KeyFields: View {
     }
 
     private var keyDetail: String? {
-        if settings.provider.key == .optional { return compact ? nil : "服务要求时才填，比如本机的 Ollama 就不用" }
-        return compact ? nil : "存进 macOS 钥匙串，不写进配置文件"
+        if settings.provider.key == .optional { return compact ? nil : L10n.tr("服务要求时才填，比如本机的 Ollama 就不用", "Only if required by the service. Local Ollama needs no key.") }
+        return compact ? nil : L10n.tr("存进 macOS 钥匙串，不写进配置文件", "Stored in macOS Keychain, outside the config file.")
     }
 }
 
@@ -491,15 +519,15 @@ private struct ChatGPTAccount: View {
             Card {
                 OpenAIMethodRow(settings: settings, compact: compact)
                 if let status = settings.chatgpt, status.signedIn {
-                    SettingRow(title: status.email ?? "已登录", detail: nil) {
+                    SettingRow(title: status.email ?? L10n.tr("已登录", "Signed in"), detail: nil) {
                         HStack(spacing: 10) {
-                            StatusDot(tone: status.planUsage ? .ok : .warn, text: status.planUsage ? "Using ChatGPT plan" : "未授权使用套餐")
-                            Link("Manage usage", destination: Self.usageURL).font(.system(size: 12))
+                            StatusDot(tone: status.planUsage ? .ok : .warn, text: status.planUsage ? L10n.tr("使用 ChatGPT 套餐", "Using ChatGPT plan") : L10n.tr("未授权使用套餐", "Plan usage not authorized"))
+                            Link(L10n.tr("管理用量", "Manage usage"), destination: Self.usageURL).font(.system(size: 12))
                         }
                     }
-                    SettingRow(title: "模型", detail: compact ? nil : "你的账号可以用的模型") {
+                    SettingRow(title: L10n.tr("模型", "Model"), detail: compact ? nil : L10n.tr("你的账号可以用的模型", "Models available to your account")) {
                         if settings.chatgptModels.isEmpty {
-                            Button("读取模型列表") { Task { await settings.loadChatGPTModels(controller: controller) } }
+                            Button(L10n.tr("读取模型列表", "Load models")) { Task { await settings.loadChatGPTModels(controller: controller) } }
                                 .buttonStyle(SecondaryButtonStyle())
                         } else {
                             Picker("", selection: $settings.model) {
@@ -508,24 +536,24 @@ private struct ChatGPTAccount: View {
                             .labelsHidden().frame(width: 220)
                         }
                     }
-                    SettingRow(title: "退出登录", detail: compact ? nil : "吊销这台 Mac 上的登录，并清除本机保存的令牌", divider: false) {
-                        Button("退出") { Task { await settings.signOutOfChatGPT(controller: controller) } }
+                    SettingRow(title: L10n.tr("退出登录", "Sign out"), detail: compact ? nil : L10n.tr("吊销这台 Mac 上的登录，并清除本机保存的令牌", "Revokes this Mac’s sign-in and removes its saved tokens."), divider: false) {
+                        Button(L10n.tr("退出", "Sign out")) { Task { await settings.signOutOfChatGPT(controller: controller) } }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("用你的 ChatGPT Plus / Pro 套餐额度生成回复，不需要 API Key。登录后可以在 ChatGPT 设置里给这个应用设用量上限。")
+                        Text(L10n.tr("用你的 ChatGPT Plus / Pro 套餐额度生成回复，不需要 API Key。登录后可以在 ChatGPT 设置里给这个应用设用量上限。", "Generate replies with your ChatGPT Plus / Pro plan. No API key needed. After signing in, set an app usage limit in ChatGPT settings."))
                             .font(.system(size: 12.5)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 12) {
-                            Button("Continue with ChatGPT") {
+                            Button(L10n.tr("使用 ChatGPT 继续", "Continue with ChatGPT")) {
                                 Task { await settings.signInWithChatGPT(controller: controller) }
                             }
                             .buttonStyle(PrimaryButtonStyle())
                             .disabled(settings.chatgpt?.loginPending == true)
                             if settings.chatgpt?.loginPending == true {
                                 ProgressView().controlSize(.small)
-                                Text("在浏览器里完成登录…").font(.system(size: 12)).foregroundStyle(.secondary)
+                                Text(L10n.tr("在浏览器里完成登录…", "Finish signing in in your browser…")).font(.system(size: 12)).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -548,12 +576,12 @@ private struct PlanWelcome: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("You're using your ChatGPT plan").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-                Text("Tact 生成回复时会使用你 ChatGPT 套餐里的额度，可以在 ChatGPT 设置里管理用量。")
+                Text(L10n.tr("正在使用你的 ChatGPT 套餐", "You're using your ChatGPT plan")).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+                Text(L10n.tr("Tact 生成回复时会使用你 ChatGPT 套餐里的额度，可以在 ChatGPT 设置里管理用量。", "Tact uses your ChatGPT plan to generate replies. Manage usage in ChatGPT settings."))
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            Button("Got it", action: dismiss).buttonStyle(SecondaryButtonStyle())
+            Button(L10n.tr("知道了", "Got it"), action: dismiss).buttonStyle(SecondaryButtonStyle())
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).fill(Theme.surface))
@@ -575,7 +603,8 @@ private struct ProviderCard: View {
                 IconTile(symbol: provider.symbol, size: 30, tint: selected ? Theme.accent : nil)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(provider.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-                    Text(detail ?? provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(detail ?? provider.detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -626,7 +655,7 @@ private struct ModelPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeader(title: "模型", subtitle: "选一个生成回复的模型。云端模型会收到当前会话最近的消息；选「本机」，聊天内容不出这台 Mac。")
+            PageHeader(title: L10n.tr("模型", "Model"), subtitle: L10n.tr("选一个生成回复的模型。云端模型会收到当前会话最近的消息；选「本机」，聊天内容不出这台 Mac。", "Choose a model for replies. Cloud models receive recent messages from the current chat. Local models keep chat content on this Mac."))
             ModelForm(settings: settings, controller: controller)
         }
     }
@@ -639,7 +668,7 @@ private struct StylePane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeader(title: "表达风格", subtitle: "写下你说话的习惯，模型会照着起草。用「## 标题」分段，配置里可以给不同会话指定不同的段落。")
+            PageHeader(title: L10n.tr("表达风格", "Writing style"), subtitle: L10n.tr("写下你说话的习惯，模型会照着起草。用「## 标题」分段，配置里可以给不同会话指定不同的段落。", "Describe how you write, and the model will follow your style. Use “## Heading” to separate sections; the config can assign a section to each chat."))
             Card {
                 TextEditor(text: $model.styleText)
                     .font(Theme.mono(12.5, weight: .regular))
@@ -649,11 +678,11 @@ private struct StylePane: View {
                     .onChange(of: model.styleText) { _, _ in model.styleSaved = false }
             }
             HStack(spacing: 12) {
-                Button("保存") { model.saveStyle() }
+                Button(L10n.tr("保存", "Save")) { model.saveStyle() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.styleSaved)
                 if model.styleSaved {
-                    Text("已保存，下一次生成就会用上").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(L10n.tr("已保存，下一次生成就会用上", "Saved. Applies to the next suggestion.")).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -667,17 +696,17 @@ private struct PrivacyPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeader(title: "隐私", subtitle: "Tact 没有服务器。下面是数据会去的全部地方。")
-            Card(title: "数据去向") {
-                FlowRow(symbol: "desktopcomputer", title: "只在这台 Mac 上",
-                        detail: "顶部栏截图和文字识别、会话列表、预取的消息（5 分钟后丢弃）、你的 API Key（钥匙串）")
-                FlowRow(symbol: "arrow.up.right", title: "发给你选的模型服务商",
-                        detail: "触发时当前会话最近 \(model.historyLimit) 条消息、你在输入框里写的意图、表达风格。选「本机」模型时这些都留在这台 Mac 上")
-                FlowRow(symbol: "nosign", title: "不会发给任何其他人",
-                        detail: "没有使用统计上报，没有云同步", divider: false)
+            PageHeader(title: L10n.tr("隐私", "Privacy"), subtitle: L10n.tr("Tact 没有服务器。下面是数据会去的全部地方。", "Tact has no servers. Here is where your data goes."))
+            Card(title: L10n.tr("数据去向", "Where data goes")) {
+                FlowRow(symbol: "desktopcomputer", title: L10n.tr("只在这台 Mac 上", "Stays on this Mac"),
+                        detail: L10n.tr("顶部栏截图和文字识别、会话列表、预取的消息（5 分钟后丢弃）、你的 API Key（钥匙串）", "Header screenshots and OCR, chat lists, prefetched messages (discarded after 5 minutes), and your API key (in Keychain)."))
+                FlowRow(symbol: "arrow.up.right", title: L10n.tr("发给你选的模型服务商", "Sent to your selected model provider"),
+                        detail: L10n.tr("触发时当前会话最近 \(model.historyLimit) 条消息、你在输入框里写的意图、表达风格。选「本机」模型时这些都留在这台 Mac 上", "When triggered: the current chat’s last \(model.historyLimit) messages, the intent you type, and your writing style. With a local model, all of this stays on this Mac."))
+                FlowRow(symbol: "nosign", title: L10n.tr("不会发给任何其他人", "Shared with no one else"),
+                        detail: L10n.tr("没有使用统计上报，没有云同步", "No analytics reporting or cloud sync."), divider: false)
             }
-            Card(title: "日志") {
-                SettingRow(title: "日志里记录聊天文字", detail: "默认关闭：反馈日志只记长度、耗时和改动字数，统计照样能算", divider: false) {
+            Card(title: L10n.tr("日志", "Logs")) {
+                SettingRow(title: L10n.tr("日志里记录聊天文字", "Include chat text in logs"), detail: L10n.tr("默认关闭：反馈日志只记长度、耗时和改动字数，统计照样能算", "Off by default. Feedback logs only record lengths, timing, and edit counts; statistics still work."), divider: false) {
                     Toggle("", isOn: $model.logPlaintext).labelsHidden().toggleStyle(.switch)
                 }
             }
@@ -715,26 +744,26 @@ private struct StatsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeader(title: "统计", subtitle: "只基于本机的反馈日志计算，日志里不含聊天文字。") {
-                Button("刷新") { Task { await model.loadStats() } }.buttonStyle(SecondaryButtonStyle())
+            PageHeader(title: L10n.tr("统计", "Statistics"), subtitle: L10n.tr("只基于本机的反馈日志计算，日志里不含聊天文字。", "Calculated from local feedback logs, without chat text.")) {
+                Button(L10n.tr("刷新", "Refresh")) { Task { await model.loadStats() } }.buttonStyle(SecondaryButtonStyle())
             }
             if let stats = model.stats, stats.triggers > 0 {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                    StatCard(value: "\(stats.triggers)", unit: "次", title: "触发",
-                             detail: "出建议 \(stats.generated) · 不建议 \(stats.empty) · 出错 \(stats.errors)")
-                    StatCard(value: percent(stats.acceptRate), unit: "", title: "采纳率",
-                             detail: "显示 \(stats.shown) 次，接受 \(stats.accepted) 次", bar: stats.acceptRate)
-                    StatCard(value: percent(stats.unchangedRate), unit: "", title: "原样发出",
-                             detail: "接受后发出的 \(stats.sent) 条里没改一个字的比例", bar: stats.unchangedRate)
+                    StatCard(value: "\(stats.triggers)", unit: L10n.tr("次", "times"), title: L10n.tr("触发", "Trigger"),
+                             detail: L10n.tr("出建议 \(stats.generated) · 不建议 \(stats.empty) · 出错 \(stats.errors)", "Suggestions \(stats.generated) · Empty \(stats.empty) · Errors \(stats.errors)"))
+                    StatCard(value: percent(stats.acceptRate), unit: "", title: L10n.tr("采纳率", "Acceptance rate"),
+                             detail: L10n.tr("显示 \(stats.shown) 次，接受 \(stats.accepted) 次", "Shown \(stats.shown) times; accepted \(stats.accepted)"), bar: stats.acceptRate)
+                    StatCard(value: percent(stats.unchangedRate), unit: "", title: L10n.tr("原样发出", "Sent unchanged"),
+                             detail: L10n.tr("接受后发出的 \(stats.sent) 条里没改一个字的比例", "Share of \(stats.sent) sent replies accepted without edits"), bar: stats.unchangedRate)
                     StatCard(value: stats.medianLatencyMS > 0 ? String(format: "%.1f", Double(stats.medianLatencyMS) / 1000) : "—",
-                             unit: stats.medianLatencyMS > 0 ? "秒" : "", title: "引擎耗时中位数",
-                             detail: stats.p90LatencyMS > 0 ? "P90 \(String(format: "%.1f", Double(stats.p90LatencyMS) / 1000)) 秒" : "还没有数据")
+                             unit: stats.medianLatencyMS > 0 ? L10n.tr("秒", "s") : "", title: L10n.tr("引擎耗时中位数", "Median engine latency"),
+                             detail: stats.p90LatencyMS > 0 ? L10n.tr("P90 \(String(format: "%.1f", Double(stats.p90LatencyMS) / 1000)) 秒", "P90 \(String(format: "%.1f", Double(stats.p90LatencyMS) / 1000)) s") : L10n.tr("还没有数据", "No data yet"))
                 }
             } else if model.statsLoading {
                 ProgressView()
             } else {
                 Card {
-                    Text(model.stats == nil ? "连不上引擎，读不到统计" : "还没有记录。用快捷键触发几次之后再来看。")
+                    Text(model.stats == nil ? L10n.tr("连不上引擎，读不到统计", "Cannot connect to the engine to load statistics") : L10n.tr("还没有记录。用快捷键触发几次之后再来看。", "No records yet. Trigger a few suggestions, then check back."))
                         .font(.system(size: 13)).foregroundStyle(.secondary).padding(20)
                 }
             }
@@ -808,15 +837,15 @@ private struct AboutPane: View {
                 AppIconImage().frame(width: 80, height: 80)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Tact").font(Theme.display(22)).foregroundStyle(Theme.ink)
-                    Text("版本 \(version)").font(Theme.mono(11)).foregroundStyle(.secondary)
-                    Text("不知道怎么回？按快捷键，回复就在输入框里。").font(.system(size: 13))
+                    Text(L10n.tr("版本 \(version)", "Version \(version)")).font(Theme.mono(11)).foregroundStyle(.secondary)
+                    Text(L10n.tr("不知道怎么回？按快捷键，回复就在输入框里。", "Unsure what to say? Press the shortcut for a reply in your chat input.")).font(.system(size: 13))
                 }
             }
-            Card(title: "文件位置") {
-                SettingRow(title: "配置", detail: AppConfig.configPath) {
-                    Button("打开文件夹") { model.openConfigFolder() }.buttonStyle(SecondaryButtonStyle())
+            Card(title: L10n.tr("文件位置", "File locations")) {
+                SettingRow(title: L10n.tr("配置", "Configuration"), detail: AppConfig.configPath) {
+                    Button(L10n.tr("打开文件夹", "Open folder")) { model.openConfigFolder() }.buttonStyle(SecondaryButtonStyle())
                 }
-                SettingRow(title: "日志", detail: "~/.tact/app.log、engine.log、feedback.jsonl", divider: false) {
+                SettingRow(title: L10n.tr("日志", "Logs"), detail: L10n.tr("~/.tact/app.log、engine.log、feedback.jsonl", "~/.tact/app.log, engine.log, feedback.jsonl"), divider: false) {
                     EmptyView()
                 }
             }
@@ -824,6 +853,6 @@ private struct AboutPane: View {
     }
 
     private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L10n.tr("开发版", "Development build")
     }
 }

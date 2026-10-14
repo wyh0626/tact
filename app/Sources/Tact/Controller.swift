@@ -39,7 +39,6 @@ final class Controller: NSObject {
 
     private(set) var hotKey: HotKey?
     private var doubleTap: DoubleTapDetector?
-    private var doubleTapDisplay = ""
     private(set) var hotKeyProblem: String?
     var ocrTestMode = false
     var saveNextHeader = false
@@ -167,9 +166,8 @@ final class Controller: NSObject {
     /// How the trigger reads to people, from the configuration before the
     /// controller has started.
     var hotKeyDisplay: String {
-        if doubleTap != nil { return doubleTapDisplay }
-        if let hotKey { return hotKey.display }
         if case .doubleTap(_, let display) = TriggerSpec.parse(config.hotkey) { return display }
+        if let hotKey { return hotKey.display }
         return config.hotkey
     }
 
@@ -200,13 +198,12 @@ final class Controller: NSObject {
 
     private func configureTrigger() {
         switch TriggerSpec.parse(config.hotkey) {
-        case .doubleTap(let modifier, let display):
+        case .doubleTap(let modifier, _):
             doubleTap = DoubleTapDetector(modifier: modifier)
-            doubleTapDisplay = display
         case .combo(let spec):
             setUpCombo(spec)
         case nil:
-            hotKeyProblem = "快捷键配置无法解析：\(config.hotkey)"
+            hotKeyProblem = L10n.tr("快捷键配置无法解析：\(config.hotkey)", "Invalid keyboard shortcut: \(config.hotkey)")
             Log.info("⚠️ \(hotKeyProblem ?? "")")
         }
     }
@@ -252,9 +249,9 @@ final class Controller: NSObject {
                     self.hotKeyPressed()
                 }
             }
-            if !hk.installHandler() { hotKeyProblem = "快捷键处理器安装失败" }
+            if !hk.installHandler() { hotKeyProblem = L10n.tr("快捷键处理器安装失败", "Could not install the keyboard shortcut handler") }
         } else {
-            hotKeyProblem = "快捷键配置无法解析：\(spec)"
+            hotKeyProblem = L10n.tr("快捷键配置无法解析：\(spec)", "Invalid keyboard shortcut: \(spec)")
             Log.info("⚠️ \(hotKeyProblem ?? "")")
         }
     }
@@ -323,7 +320,7 @@ final class Controller: NSObject {
             if status == noErr {
                 hotKeyProblem = nil
             } else {
-                hotKeyProblem = "快捷键 \(hk.display) 注册失败（\(status)），可能被其他应用占用，请在配置里换一个"
+                hotKeyProblem = L10n.tr("快捷键 \(hk.display) 注册失败（\(status)），可能被其他应用占用，请在配置里换一个", "Could not register shortcut \(hk.display) (\(status)). Another app may be using it. Choose another shortcut in settings")
                 Log.info("⚠️ \(hotKeyProblem ?? "")")
             }
         } else {
@@ -471,9 +468,9 @@ final class Controller: NSObject {
     /// likely cause, an engine started separately that keeps the socket.
     func engineRestartProblem() -> String {
         if engineProcess?.isRunning != true, let reason = Self.lastLine(ofFile: Self.engineLogPath) {
-            return "引擎没能启动：\(reason)"
+            return L10n.tr("引擎没能启动：\(reason)", "The engine could not start: \(reason)")
         }
-        return "引擎没能重启。如果它是在终端里单独启动的，请先关掉它"
+        return L10n.tr("引擎没能重启。如果它是在终端里单独启动的，请先关掉它", "The engine could not restart. If you started it separately in Terminal, stop it first")
     }
 
     /// The last line written to a log, without the timestamp in front of it.
@@ -493,12 +490,12 @@ final class Controller: NSObject {
     /// connection button.
     func testModel(timeout: TimeInterval = 30) async -> (ok: Bool, message: String) {
         guard let r = try? await engine.call(["op": "model_test"], timeout: timeout) else {
-            return (false, "连不上引擎")
+            return (false, L10n.tr("连不上引擎", "Cannot connect to the engine"))
         }
         let response = EngineResponse(r)
-        guard response.ok else { return (false, response.error ?? "模型出错") }
+        guard response.ok else { return (false, response.error ?? L10n.tr("模型出错", "Model error")) }
         let ms = (r["timing_ms"] as? [String: Any])?["model"] as? NSNumber
-        return (true, "连接正常，\(ms?.intValue ?? 0) ms，回复「\(r["note"] as? String ?? "")」")
+        return (true, L10n.tr("连接正常，\(ms?.intValue ?? 0) ms，回复「\(r["note"] as? String ?? "")」", "Connected in \(ms?.intValue ?? 0) ms; reply: “\(r["note"] as? String ?? "")”"))
     }
 
     /// A plain engine request for the settings window; nil when the engine
@@ -513,7 +510,7 @@ final class Controller: NSObject {
         let matches = config.platformRegistry.registrations.filter { $0.id == id }
         guard matches.count == 1, let registration = matches.first,
               registration.available, let manifest = registration.manifest else {
-            return (false, "平台插件不可用，请先检查插件配置", nil)
+            return (false, L10n.tr("平台插件不可用，请先检查插件配置", "The platform plugin is unavailable. Check its configuration"), nil)
         }
         var generation = routeGeneration
         for attempt in 0..<2 {
@@ -533,10 +530,10 @@ final class Controller: NSObject {
                 }
                 guard response.platformID == id else { throw PlatformProbeError.mismatch }
                 guard response.ok else {
-                    return (false, response.error ?? "平台连接失败，请检查账号登录和插件配置", nil)
+                    return (false, response.error ?? L10n.tr("平台连接失败，请检查账号登录和插件配置", "Could not connect to the platform. Check account sign-in and plugin settings"), nil)
                 }
                 guard let count = response.count, count >= 0 else { throw PlatformProbeError.outdated }
-                return (true, "连接正常，读到 \(count) 个会话", count)
+                return (true, L10n.tr("连接正常，读到 \(count) 个会话", "Connected; read \(count) chats"), count)
             } catch let issue as PlatformProbeError {
                 if attempt == 0, issue.canRestart, engineProcess?.isRunning == true {
                     let beforeRestart = routeGeneration
@@ -550,7 +547,7 @@ final class Controller: NSObject {
                 }
                 return (false, issue.localizedDescription, nil)
             } catch {
-                return (false, "连不上引擎，请检查引擎是否运行", nil)
+                return (false, L10n.tr("连不上引擎，请检查引擎是否运行", "Cannot connect to the engine. Check that it is running"), nil)
             }
         }
         return (false, PlatformProbeError.outdated.localizedDescription, nil)
@@ -675,13 +672,13 @@ final class Controller: NSObject {
             window = try await header.captureWindow(pid: t.pid, windowFrame: snap.windowFrame)
         } catch {
             guard isCurrent(t.id) else { return }
-            fail(t, (error as? HeaderError)?.errorDescription ?? "截不到顶部栏：\(error.localizedDescription)。检查屏幕录制权限")
+            fail(t, (error as? HeaderError)?.errorDescription ?? L10n.tr("截不到顶部栏：\(error.localizedDescription)。检查屏幕录制权限", "Could not capture the header: \(error.localizedDescription). Check screen recording permission"))
             return
         }
         let captureMS = ms(since: captureStart)
         guard isCurrent(t.id) else { return }
         guard let image = HeaderReader.crop(window, windowFrame: snap.windowFrame, to: rect) else {
-            fail(t, "顶部栏区域超出了窗口范围，检查插件的 desktop.header 设置")
+            fail(t, L10n.tr("顶部栏区域超出了窗口范围，检查插件的 desktop.header 设置", "The header area extends beyond the window. Check the plugin desktop.header settings"))
             return
         }
         // The input's top-right corner is empty when there is no text yet,
@@ -716,13 +713,13 @@ final class Controller: NSObject {
                 }).value
             } catch {
                 guard isCurrent(t.id) else { return }
-                fail(t, "文字识别失败：\(error.localizedDescription)")
+                fail(t, L10n.tr("文字识别失败：\(error.localizedDescription)", "Text recognition failed: \(error.localizedDescription)"))
                 return
             }
             ocrMS = ms(since: ocrStart)
             guard isCurrent(t.id) else { return }
             if lines.isEmpty {
-                fail(t, "顶部栏没识别出文字。可以在菜单里保存一次顶部栏截图，检查截取位置")
+                fail(t, L10n.tr("顶部栏没识别出文字。可以在菜单里保存一次顶部栏截图，检查截取位置", "No text was recognized in the header. Save a header screenshot from the menu to check the capture area"))
                 return
             }
             payload["ocr_lines"] = lines.map { line -> [String: Any] in ["text": line.text, "height": line.height] }
@@ -743,7 +740,7 @@ final class Controller: NSObject {
         guard isCurrent(t.id) else { return }
         currentCall = nil
         guard raw["platform_id"] as? String == t.platformID else {
-            fail(t, "引擎平台配置未生效，请重启引擎后再试")
+            fail(t, L10n.tr("引擎平台配置未生效，请重启引擎后再试", "The platform configuration has not taken effect. Restart the engine and try again"))
             return
         }
         let r = EngineResponse(raw)
@@ -751,9 +748,9 @@ final class Controller: NSObject {
         if ocrTestMode {
             state = .idle
             let top = lines.first?.text ?? ""
-            let verdict = r.ok ? "匹配到：\(r.chatTitle ?? "?")（\(r.method ?? "")）" : "未匹配：\(r.friendlyError)"
+            let verdict = r.ok ? L10n.tr("匹配到：\(r.chatTitle ?? "?")（\(r.method ?? "")）", "Matched: \(r.chatTitle ?? "?") (\(r.method ?? ""))") : L10n.tr("未匹配：\(r.friendlyError)", "No match: \(r.friendlyError)")
             Log.console("OCR 测试 识别行=\(lines.map { $0.text }) 截图 \(captureMS)ms OCR \(ocrMS)ms \(verdict)")
-            overlay.showToast("识别：\(top)\n\(verdict)\n截图 \(captureMS) ms · OCR \(ocrMS) ms", input: snap.frame, duration: 4)
+            overlay.showToast(L10n.tr("识别：\(top)\n\(verdict)\n截图 \(captureMS) ms · OCR \(ocrMS) ms", "Recognized: \(top)\n\(verdict)\nCapture \(captureMS) ms · OCR \(ocrMS) ms"), input: snap.frame, duration: 4)
             return
         }
 
@@ -767,7 +764,7 @@ final class Controller: NSObject {
 
         guard let text = r.suggestion, !text.isEmpty else {
             state = .idle
-            overlay.showToast("这次不建议", input: snap.frame, duration: 1.5)
+            overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: snap.frame, duration: 1.5)
             return
         }
 
@@ -786,7 +783,7 @@ final class Controller: NSObject {
         guard sameChat, let focused = AX.inputSnapshot(pid: t.pid), focused.value == now.value,
               CFEqual(focused.element, now.element) else {
             state = .idle
-            overlay.showToast("会话已切换，建议作废", input: now.frame, duration: 1.5)
+            overlay.showToast(L10n.tr("会话已切换，建议作废", "The chat changed. Suggestion discarded"), input: now.frame, duration: 1.5)
             feedback(t.id, "voided", chatID: r.chatID, detail: "chat_changed_before_display")
             return
         }
@@ -1134,11 +1131,11 @@ final class Controller: NSObject {
             inputWasEmpty = false // a Return from here on sends this text
             startTracking(requestID: p.trigger.id, pid: pid, chatID: p.chatID, text: p.text)
         case .mismatch:
-            overlay.showToast("输入框里的内容和建议不一致，发送前检查一下", input: now.frame, duration: 3, kind: .warning)
+            overlay.showToast(L10n.tr("输入框里的内容和建议不一致，发送前检查一下", "The input differs from the suggestion. Review it before sending"), input: now.frame, duration: 3, kind: .warning)
             feedback(p.trigger.id, "voided", chatID: p.chatID, detail: "insert_mismatch")
             Log.info("写入后输入框内容和建议不一致")
         case .notApplied(let leftOnClipboard):
-            overlay.showToast(leftOnClipboard ? "没能写入输入框，建议已放在剪贴板，可以 ⌘V 粘贴" : "没能写入输入框",
+            overlay.showToast(leftOnClipboard ? L10n.tr("没能写入输入框，建议已放在剪贴板，可以 ⌘V 粘贴", "Could not insert into the input. The suggestion is on the clipboard; press ⌘V to paste") : L10n.tr("没能写入输入框", "Could not insert into the input"),
                               input: now.frame, duration: 3, kind: .warning)
             feedback(p.trigger.id, "voided", chatID: p.chatID, detail: "insert_failed")
             Log.info("写入失败（剪贴板\(leftOnClipboard ? "保留了建议" : "未改动")）")
@@ -1221,11 +1218,11 @@ private enum PlatformProbeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .outdated:
-            return "引擎版本过旧，不支持当前平台适配器。请退出并重新打开 Tact；独立运行的引擎需要更新后手动重启。"
+            return L10n.tr("引擎版本过旧，不支持当前平台适配器。请退出并重新打开 Tact；独立运行的引擎需要更新后手动重启。", "The engine is too old for this platform adapter. Quit and reopen Tact. If the engine runs separately, update and restart it manually.")
         case .mismatch:
-            return "引擎中的平台配置尚未生效或检测结果与所选平台不一致，请重启引擎后再试。独立运行的引擎需要手动重启。"
+            return L10n.tr("引擎中的平台配置尚未生效或检测结果与所选平台不一致，请重启引擎后再试。独立运行的引擎需要手动重启。", "The engine platform settings have not taken effect, or the detected platform does not match the selection. Restart the engine and try again. A separate engine must be restarted manually.")
         case .changed:
-            return "平台配置已变化，请重新检测连接"
+            return L10n.tr("平台配置已变化，请重新检测连接", "Platform settings changed. Check the connection again")
         }
     }
 }

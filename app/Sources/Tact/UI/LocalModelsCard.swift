@@ -29,8 +29,8 @@ struct LocalModelsCard: View {
 
     var body: some View {
         Card {
-            Text("按这台 Mac 的 \(memory) GB 内存推荐 \(recommended.name)。小模型回得更快，大模型写得更好。聊天内容只在这台 Mac 上处理。"
-                 + (downloading ? "下载完会自动启用。" : ""))
+            Text(L10n.tr("按这台 Mac 的 \(memory) GB 内存推荐 \(recommended.name)。小模型回得更快，大模型写得更好。聊天内容只在这台 Mac 上处理。", "With \(memory) GB of memory, \(recommended.name) is recommended for this Mac. Smaller models reply faster; larger models write better. Chats are processed only on this Mac. ")
+                 + (downloading ? L10n.tr("下载完会自动启用。", "The model will activate after downloading.") : ""))
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 6)
             ForEach(Array(LocalModel.catalog.enumerated()), id: \.element.id) { index, model in
@@ -83,12 +83,12 @@ private struct LocalModelRow: View {
                 HStack(spacing: 8) {
                     Text(model.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
                     if recommended {
-                        Text("推荐").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.accent)
+                        Text(L10n.tr("推荐", "Recommended")).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.accent)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Capsule().fill(Theme.accentSoft))
                     }
                 }
-                Text("\(model.sizeText) · 建议 \(model.recommendedMemoryGB) GB 内存")
+                Text(L10n.tr("\(model.sizeText) · 建议 \(model.recommendedMemoryGB) GB 内存", "\(model.sizeText) · \(model.recommendedMemoryGB) GB memory recommended"))
                     .font(.system(size: 11.5)).foregroundStyle(.secondary)
                 progress
             }
@@ -114,31 +114,31 @@ private struct LocalModelRow: View {
 
     @ViewBuilder private var trailing: some View {
         if memory < model.minimumMemoryGB {
-            Text("需要 \(model.minimumMemoryGB) GB 内存").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(L10n.tr("需要 \(model.minimumMemoryGB) GB 内存", "Requires \(model.minimumMemoryGB) GB memory")).font(.system(size: 12)).foregroundStyle(.secondary)
         } else {
             switch state {
             case .ready where inUse:
-                Text("使用中").font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.ok)
+                Text(L10n.tr("使用中", "In use")).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.ok)
             case .ready:
                 HStack(spacing: 4) {
-                    Button("删除", action: delete).buttonStyle(QuietButtonStyle())
-                    Button("使用", action: use).buttonStyle(SecondaryButtonStyle())
+                    Button(L10n.tr("删除", "Delete"), action: delete).buttonStyle(QuietButtonStyle())
+                    Button(L10n.tr("使用", "Use"), action: use).buttonStyle(SecondaryButtonStyle())
                 }
             case .downloading:
-                Button("暂停", action: pause).buttonStyle(QuietButtonStyle())
+                Button(L10n.tr("暂停", "Pause"), action: pause).buttonStyle(QuietButtonStyle())
             case .paused:
                 HStack(spacing: 4) {
-                    Button("删除", action: delete).buttonStyle(QuietButtonStyle())
-                    Button("继续", action: download).buttonStyle(SecondaryButtonStyle())
+                    Button(L10n.tr("删除", "Delete"), action: delete).buttonStyle(QuietButtonStyle())
+                    Button(L10n.tr("继续", "Resume"), action: download).buttonStyle(SecondaryButtonStyle())
                 }
             case .verifying:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("校验中…").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(L10n.tr("校验中…", "Verifying…")).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             case .absent, .failed:
                 Button(action: download) {
-                    Label("下载", systemImage: "arrow.down.circle")
+                    Label(L10n.tr("下载", "Download"), systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(SecondaryButtonStyle())
             }

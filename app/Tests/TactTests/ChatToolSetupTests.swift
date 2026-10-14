@@ -4,28 +4,31 @@ import Testing
 
 @MainActor
 struct ChatToolSetupTests {
-    @Test func developerBriefCarriesValidProtocolExamples() throws {
-        let text = PluginBrief.text
-        #expect(text.contains("由我自己发送"))
-        #expect(text.contains("docs/ADAPTER.md") && text.contains("plugins/template/"))
-        #expect(text.contains("setup.commands"))
+    @Test(arguments: [AppLanguage.simplifiedChinese, .english])
+    func developerBriefCarriesValidProtocolExamples(language: AppLanguage) throws {
+        try L10n.$overrideLanguage.withValue(language) {
+            let text = PluginBrief.text
+            #expect(text.contains(L10n.tr("由我自己发送", "I send it myself")))
+            #expect(text.contains("docs/ADAPTER.md") && text.contains("plugins/template/"))
+            #expect(text.contains("setup.commands"))
 
-        let historyLine = try #require(text.components(separatedBy: .newlines).first { $0.contains("history 示例：") })
-        let historyJSON = try #require(historyLine.components(separatedBy: "history 示例：").last)
-        let history = try #require(JSONSerialization.jsonObject(with: Data(historyJSON.utf8)) as? [String: Any])
-        let message = try #require((history["messages"] as? [[String: Any]])?.first)
-        #expect(message["from_me"] as? Bool == false)
-        let time = try #require(message["time"] as? String)
-        #expect(ISO8601DateFormatter().date(from: time) != nil)
+            let historyLine = try #require(text.components(separatedBy: .newlines).first { $0.contains(L10n.tr("history 示例：", "history example:")) })
+            let historyJSON = try #require(historyLine.components(separatedBy: L10n.tr("history 示例：", "history example:")).last)
+            let history = try #require(JSONSerialization.jsonObject(with: Data(historyJSON.utf8)) as? [String: Any])
+            let message = try #require((history["messages"] as? [[String: Any]])?.first)
+            #expect(message["from_me"] as? Bool == false)
+            let time = try #require(message["time"] as? String)
+            #expect(ISO8601DateFormatter().date(from: time) != nil)
 
-        let exampleStart = try #require(text.range(of: "manifest.json 示例："))
-        let exampleEnd = try #require(text.range(of: "完整规范见"))
-        let manifestJSON = String(text[exampleStart.upperBound..<exampleEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-        let manifest = try JSONDecoder().decode(PlatformManifest.self, from: Data(manifestJSON.utf8))
-        try manifest.validate()
-        #expect(manifest.capabilities["events.subscribe"] == false)
-        let login = try #require(manifest.setup?.commands?.first)
-        #expect(login.requiresInput && login.inputPlaceholder != nil)
+            let exampleStart = try #require(text.range(of: L10n.tr("manifest.json 示例：", "manifest.json example:")))
+            let exampleEnd = try #require(text.range(of: L10n.tr("完整规范见", "See docs/ADAPTER.md")))
+            let manifestJSON = String(text[exampleStart.upperBound..<exampleEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let manifest = try JSONDecoder().decode(PlatformManifest.self, from: Data(manifestJSON.utf8))
+            try manifest.validate()
+            #expect(manifest.capabilities["events.subscribe"] == false)
+            let login = try #require(manifest.setup?.commands?.first)
+            #expect(login.requiresInput && login.inputPlaceholder != nil)
+        }
     }
 
     @Test func validFolderIsAddedDisabledWithItsSetupAndNothingRuns() async throws {
@@ -35,7 +38,7 @@ struct ChatToolSetupTests {
             let entry = try #require(settings.selected)
             #expect(entry.name == "Company Chat")
             #expect(entry.supported && !entry.enabled)
-            #expect(entry.status.contains("未启用"))
+            #expect(entry.status.contains(L10n.tr("未启用", "Disabled")))
             #expect(!settings.selectedConnectionVerified)
             #expect(settings.selectedSetup?.summary == "先完成提供方的登录流程")
             #expect(settings.selectedSetup?.requirements == ["安装公司提供的客户端"])
@@ -84,7 +87,7 @@ struct ChatToolSetupTests {
             try zip(empty, to: archive)
             for candidate in [source.appendingPathComponent("missing"), empty, archive] {
                 #expect(!(await model.importPackage(from: candidate)))
-                #expect(settings.problem?.contains("导入失败") == true)
+                #expect(settings.problem?.contains(L10n.tr("导入失败", "Import failed")) == true)
                 #expect(settings.entries.isEmpty)
             }
             #expect(settings.problem?.contains("manifest.json") == true)
@@ -102,7 +105,7 @@ struct ChatToolSetupTests {
             #expect(!settings.selectedConnectionVerified)
             let enabled = await settings.setEnabledAndWait(true, id: id)
             #expect(!enabled)
-            #expect(settings.problem?.contains("先检测连接") == true)
+            #expect(settings.problem?.contains(L10n.tr("先检测连接", "Check the connection")) == true)
             #expect(settings.selected?.enabled == false)
             #expect(!settings.busy)
             #expect(try Data(contentsOf: configURL) == original)
@@ -128,7 +131,7 @@ struct ChatToolSetupTests {
     @Test func plannedPlatformsAreListedButNeverEntries() async throws {
         try await withFixture { _, settings, configURL, _, _ in
             let original = try Data(contentsOf: configURL)
-            #expect(PlatformSettings.planned.map(\.name) == ["钉钉", "飞书", "Slack", "Discord"])
+            #expect(PlatformSettings.planned.map(\.name) == [L10n.tr("钉钉", "DingTalk"), L10n.tr("飞书", "Lark"), "Slack", "Discord"])
             for platform in PlatformSettings.planned {
                 settings.select(platform.id)
                 #expect(settings.selectedID == nil)
@@ -145,7 +148,7 @@ struct ChatToolSetupTests {
         #expect(lines[1] == #"rm -f -- "$0""#)
         #expect(lines[2].hasPrefix("print -r -- '"))
         #expect(lines[3] == command)
-        #expect(lines.contains { $0.contains("检测并启用") })
+        #expect(lines.contains { $0.contains(L10n.tr("检测并启用", "Check and enable")) })
     }
 
     /// The line that shows the command must print it as written: no

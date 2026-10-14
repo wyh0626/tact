@@ -88,9 +88,9 @@ struct ModelSettingsTests {
         settings.chatgptModels = [ChatGPTModel(slug: "gpt-fast", displayName: "GPT Fast")]
         settings.choose(.chatgpt)
         #expect(settings.model == "gpt-fast")
-        #expect(settings.validationError == "先用 ChatGPT 账号登录")
+        #expect(settings.validationError == L10n.tr("先用 ChatGPT 账号登录", "Sign in with ChatGPT first"))
         settings.chatgpt = ChatGPTStatus(signedIn: true, email: "me@example.com", planUsage: false, loginPending: false, loginError: nil)
-        #expect(settings.validationError?.contains("没有授权") == true)
+        #expect(settings.validationError?.contains(L10n.tr("没有授权", "was not authorized")) == true)
         settings.chatgpt = ChatGPTStatus(signedIn: true, email: "me@example.com", planUsage: true, loginPending: false, loginError: nil)
         #expect(settings.validationError == nil)
 
@@ -141,9 +141,9 @@ struct ModelSettingsTests {
         settings.reconcileSpeed()
         let options = settings.speedOptions
         #expect(options.levels.map(\.effort) == ["low", "high"])
-        #expect(options.levels.first?.detail.hasPrefix("模型默认") == true)
+        #expect(options.levels.first?.detail.hasPrefix(L10n.tr("模型默认", "Model default")) == true)
         #expect(settings.reasoningEffort == "low", "the model's default level starts selected")
-        #expect(options.fastTier == .init(id: "priority", detail: "约 2 倍速度，会更快消耗套餐额度"))
+        #expect(options.fastTier == .init(id: "priority", detail: L10n.tr("约 2 倍速度，会更快消耗套餐额度", "About 2× faster, uses your plan allowance faster")))
 
         settings.reasoningEffort = "high"
         settings.fastMode = true
@@ -167,7 +167,7 @@ struct ModelSettingsTests {
         let all = ["low", "medium", "high", "xhigh", "max", "ultra"].map { ChatGPTModel.Level(effort: $0, description: "") }
         settings.chatgptModels = [ChatGPTModel(slug: "sol", displayName: "Sol", reasoningLevels: all, defaultReasoning: "medium")]
         settings.model = "sol"
-        #expect(settings.speedOptions.levels.map(\.label) == ["低", "中", "高"])
+        #expect(settings.speedOptions.levels.map(\.label) == [L10n.tr("低", "Low"), L10n.tr("中", "Medium"), L10n.tr("高", "High")])
         settings.reconcileSpeed()
         #expect(settings.reasoningEffort == "medium", "a level no longer offered falls back to the model default")
 
@@ -219,8 +219,8 @@ struct ModelSettingsTests {
     }
 
     @Test func tierDescriptions() {
-        #expect(SpeedOptions.tierDetail("1.5x speed") == "约 1.5 倍速度")
-        #expect(SpeedOptions.tierDetail("increased usage") == "更快出结果，会更快消耗套餐额度")
+        #expect(SpeedOptions.tierDetail("1.5x speed") == L10n.tr("约 1.5 倍速度", "About 1.5× faster"))
+        #expect(SpeedOptions.tierDetail("increased usage") == L10n.tr("更快出结果，会更快消耗套餐额度", "Faster results, uses your plan allowance faster"))
     }
 
     @Test func validation() {
@@ -233,6 +233,6 @@ struct ModelSettingsTests {
         settings.model = "m"
         #expect(settings.validationError == nil, "a custom endpoint may need no key, like Ollama")
         settings.choose(.deepseek)
-        #expect(settings.validationError == "填写 API Key")
+        #expect(settings.validationError == L10n.tr("填写 API Key", "Enter an API key"))
     }
 }

@@ -35,7 +35,7 @@ struct WeChatContextTests {
         #expect(payload["input"] as? String == "别承诺时间")
         let data = try JSONSerialization.data(withJSONObject: payload)
         #expect(!String(decoding: data, as: UTF8.self).contains("其他聊天的预览"))
-        #expect(WeChatAssistant.summary(reading).contains("测试模式未调用 AI"))
+        #expect(WeChatAssistant.summary(reading).contains(L10n.tr("测试模式未调用 AI", "Test mode did not call AI")))
     }
 
     @Test func positionsAreIndependentOfPixelScale() throws {

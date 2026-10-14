@@ -44,14 +44,32 @@ struct AppConfig {
                                   log: (String) -> Void = Log.info) {
         guard !FileManager.default.fileExists(atPath: destination), let resources else { return }
         let stylePath = (stateDirectory as NSString).appendingPathComponent("style.md")
-        let template = resources.appendingPathComponent("style.example.md")
+        let english = L10n.language == .english
+        let localizedTemplate = resources.appendingPathComponent(english ? "style.example.en.md" : "style.example.md")
+        // Older resource directories and developer fixtures may only have
+        // the original template; keep those working too.
+        let hasLocalizedTemplate = FileManager.default.fileExists(atPath: localizedTemplate.path)
+        let template = hasLocalizedTemplate ? localizedTemplate : resources.appendingPathComponent("style.example.md")
+        let isEnglishTemplate = english && hasLocalizedTemplate
         if !FileManager.default.fileExists(atPath: stylePath) {
             try? FileManager.default.createDirectory(atPath: stateDirectory, withIntermediateDirectories: true,
                                                      attributes: [.posixPermissions: 0o700])
             try? FileManager.default.copyItem(at: template, to: URL(fileURLWithPath: stylePath))
         }
+        // A reset configuration can coexist with a user's older style file
+        // in another language. Select a section that actually exists in it.
+        let preferredSection = isEnglishTemplate ? "Work chats" : "工作聊天"
+        let style = (try? String(contentsOfFile: stylePath, encoding: .utf8)) ?? ""
+        let sections = style.components(separatedBy: .newlines).compactMap { line -> String? in
+            let heading = line.trimmingCharacters(in: .whitespaces)
+            guard heading.hasPrefix("## ") else { return nil }
+            let name = String(heading.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? nil : name
+        }
+        let defaultSection = sections.contains(preferredSection) ? preferredSection : sections.first ?? preferredSection
         var file = ConfigFile.initial(styleFile: stylePath,
-                                      feedbackFile: (stateDirectory as NSString).appendingPathComponent("feedback.jsonl"))
+                                      feedbackFile: (stateDirectory as NSString).appendingPathComponent("feedback.jsonl"),
+                                      defaultStyleSection: defaultSection)
         file.set("platforms", [[String: Any]]())
         do {
             try file.write(to: destination)
@@ -78,11 +96,12 @@ struct AppConfig {
         var cfg = AppConfig()
         guard let data = FileManager.default.contents(atPath: configPath) else {
             cfg.socketPath = expand(cfg.socketPath)
-            return (cfg, "没找到配置文件 \(configPath)，先运行 scripts/setup.sh")
+            return (cfg, L10n.tr("没找到配置文件 \(configPath)，先运行 scripts/setup.sh",
+                                 "Configuration file not found at \(configPath). Run scripts/setup.sh first."))
         }
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             cfg.socketPath = expand(cfg.socketPath)
-            return (cfg, "配置文件不是合法的 JSON：\(configPath)")
+            return (cfg, L10n.tr("配置文件不是合法的 JSON：\(configPath)", "Invalid JSON in configuration file: \(configPath)"))
         }
         if let v = root["socket"] as? String { cfg.socketPath = v }
         if let v = (root["model"] as? [String: Any])?["api_key_env"] as? String { cfg.apiKeyEnv = v }
@@ -94,7 +113,8 @@ struct AppConfig {
             if let method = InsertMethod(rawValue: v) {
                 cfg.insertMethod = method
             } else {
-                problem = "app.insert_method 只能是 auto、paste 或 ax，现在是 \(v)，先按 auto 处理"
+                problem = L10n.tr("app.insert_method 只能是 auto、paste 或 ax，现在是 \(v)，先按 auto 处理",
+                                  "app.insert_method must be auto, paste or ax; got \(v). Using auto for now.")
             }
         }
         if let v = app["request_timeout_seconds"] as? NSNumber { cfg.requestTimeout = v.doubleValue }

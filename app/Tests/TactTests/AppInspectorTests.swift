@@ -9,7 +9,7 @@ struct AppInspectorTests {
         #expect(AppInspector.run(bundleID: "io.github.wyh0626.tact.not-running", output: out.path))
         let report = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: out)) as? [String: Any])
         #expect(report["running"] as? Bool == false)
-        #expect((report["problems"] as? [String])?.contains("应用没有在运行") == true)
+        #expect((report["problems"] as? [String])?.contains(L10n.tr("应用没有在运行", "The app is not running")) == true)
         #expect(report["accessibility"] == nil && report["ocr"] == nil)
     }
 

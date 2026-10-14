@@ -279,3 +279,38 @@ struct ScreenTests {
         }
     }
 }
+
+// English layouts share the serialized screen suite and its throwaway config.
+extension ScreenTests {
+    @Test func rendersEnglishSettingsOnboardingAndPanel() {
+        L10n.$overrideLanguage.withValue(.english) {
+            let controller = makeController()
+            let settings = SettingsModel(controller: controller)
+            settings.showAsSetUp()
+            for pane in [SettingsPane.general, .model, .chat, .privacy, .stats, .about] {
+                settings.pane = pane
+                #expect(Snapshot.render(SettingsView(model: settings), name: "english-settings-\(pane.rawValue)",
+                                        size: CGSize(width: 880, height: 620)) != nil)
+            }
+            let actions = QuickPanelActions(openSettings: { _ in }, openOnboarding: {}, quit: {}, speedSaved: { _ in })
+            let panel = QuickPanelView(settings: settings, platforms: settings.platformSettings, speed: settings.modelSettings,
+                                       status: QuickPanelStatus(hotkey: controller.hotKeyDisplay, problem: nil), actions: actions)
+                .frame(width: QuickPanelController.width).background(Theme.canvas)
+            for dark in [false, true] {
+                #expect(Snapshot.render(panel, name: "english-quick-panel-\(dark ? "dark" : "light")",
+                                        size: CGSize(width: 320, height: 480), dark: dark) != nil)
+            }
+            let onboarding = OnboardingModel(controller: controller)
+            let previousStep = UserDefaults.standard.object(forKey: OnboardingModel.stepKey)
+            defer {
+                UserDefaults.standard.set(previousStep, forKey: OnboardingModel.stepKey)
+                onboarding.stopWatchingPermissions()
+            }
+            for step in [OnboardingStep.welcome, .practice] {
+                onboarding.step = step
+                #expect(Snapshot.render(OnboardingView(model: onboarding), name: "english-onboarding-\(step.rawValue)",
+                                        size: CGSize(width: 860, height: 620)) != nil)
+            }
+        }
+    }
+}

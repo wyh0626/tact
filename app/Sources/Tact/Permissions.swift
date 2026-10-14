@@ -11,15 +11,15 @@ enum Permission: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .accessibility: return "辅助功能"
-        case .screenRecording: return "屏幕录制"
+        case .accessibility: return L10n.tr("辅助功能", "Accessibility")
+        case .screenRecording: return L10n.tr("屏幕录制", "Screen Recording")
         }
     }
 
     var reason: String {
         switch self {
-        case .accessibility: return "读取输入框里的文字和光标位置，按 Tab 时把建议写进去"
-        case .screenRecording: return "截取聊天窗口，在本机认出当前是哪个会话；微信的消息也靠它读取"
+        case .accessibility: return L10n.tr("读取输入框里的文字和光标位置，按 Tab 时把建议写进去", "Read the input text and cursor position, and insert suggestions when you press Tab.")
+        case .screenRecording: return L10n.tr("截取聊天窗口，在本机认出当前是哪个会话；微信的消息也靠它读取", "Capture the chat window to identify the current conversation locally and read WeChat messages.")
         }
     }
 
@@ -62,7 +62,7 @@ enum LoginItem {
 
     /// Returns a message for the user when the change did not go through.
     static func set(_ enabled: Bool) -> String? {
-        guard isAvailable else { return "从安装包（Tact.app）启动时才能设置开机启动" }
+        guard isAvailable else { return L10n.tr("从安装包（Tact.app）启动时才能设置开机启动", "Launch Tact.app to configure launch at login.") }
         do {
             if enabled {
                 try SMAppService.mainApp.register()
@@ -70,11 +70,11 @@ enum LoginItem {
                 try SMAppService.mainApp.unregister()
             }
             if SMAppService.mainApp.status == .requiresApproval {
-                return "需要在 系统设置 → 通用 → 登录项 里允许 Tact"
+                return L10n.tr("需要在 系统设置 → 通用 → 登录项 里允许 Tact", "Allow Tact in System Settings → General → Login Items.")
             }
             return nil
         } catch {
-            return "设置开机启动失败：\(error.localizedDescription)"
+            return L10n.tr("设置开机启动失败：\(error.localizedDescription)", "Could not change launch at login: \(error.localizedDescription)")
         }
     }
 }

@@ -12,9 +12,9 @@ struct ChatToolsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeader(title: "聊天工具", subtitle: "在这些应用的聊天窗口里按快捷键生成建议。接受后只填进输入框，由你发送。") {
+            PageHeader(title: L10n.tr("聊天工具", "Chat tools"), subtitle: L10n.tr("在这些应用的聊天窗口里按快捷键生成建议。接受后只填进输入框，由你发送。", "Press the shortcut in a chat window to get a suggestion. Accept it to fill the input, then send it yourself.")) {
                 if !settings.entries.isEmpty {
-                    Button { add() } label: { Label("添加", systemImage: "plus") }
+                    Button { add() } label: { Label(L10n.tr("添加", "Add"), systemImage: "plus") }
                         .buttonStyle(SecondaryButtonStyle()).disabled(settings.busy)
                 }
             }
@@ -29,9 +29,9 @@ struct ChatToolsPane: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Card(title: "上下文") {
-                SettingRow(title: "读取消息条数", detail: "插件读取的最近消息条数；微信读取当前聊天区的可见文字", divider: false) {
-                    Stepper("\(model.historyLimit) 条", value: $model.historyLimit, in: 5...50, step: 5)
+            Card(title: L10n.tr("上下文", "Context")) {
+                SettingRow(title: L10n.tr("读取消息条数", "Recent messages"), detail: L10n.tr("插件读取的最近消息条数；微信读取当前聊天区的可见文字", "Recent messages to read through plugins; WeChat reads the text visible in the current chat"), divider: false) {
+                    Stepper(L10n.tr("\(model.historyLimit) 条", "\(model.historyLimit) messages"), value: $model.historyLimit, in: 5...50, step: 5)
                         .font(Theme.mono(12)).frame(width: 120)
                 }
             }
@@ -52,21 +52,21 @@ private struct WeChatCard: View {
     @ObservedObject var settings: PlatformSettings
 
     var body: some View {
-        Card(title: "内置") {
-            SettingRow(title: "微信", detail: "定位当前聊天区，在本机识别文字和位置，再交给所选 AI 理解并生成建议。"
-                       + "只读取窗口内可见内容，可以先开测试模式检查识别范围。", divider: model.wechat) {
-                Toggle("微信", isOn: Binding(get: { model.wechat }, set: { model.setWeChat($0) }))
+        Card(title: L10n.tr("内置", "Built in")) {
+            SettingRow(title: L10n.tr("微信", "WeChat"), detail: L10n.tr("定位当前聊天区，在本机识别文字和位置，再交给所选 AI 理解并生成建议。", "Finds the current chat area and recognizes text and positions on your Mac, then sends the text to your selected AI for suggestions. ")
+                       + L10n.tr("只读取窗口内可见内容，可以先开测试模式检查识别范围。", "Only visible window content is read. Use test mode to check the captured area first."), divider: model.wechat) {
+                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { model.wechat }, set: { model.setWeChat($0) }))
                     .labelsHidden().toggleStyle(.switch)
             }
             if model.wechat {
                 if model.permissions[.screenRecording] == false {
-                    SettingRow(title: "需要屏幕录制权限", detail: "在系统设置里打开 Tact 的屏幕录制，然后重新打开 Tact") {
-                        Button("打开系统设置") { Permission.screenRecording.openSystemSettings() }
+                    SettingRow(title: L10n.tr("需要屏幕录制权限", "Screen recording permission required"), detail: L10n.tr("在系统设置里打开 Tact 的屏幕录制，然后重新打开 Tact", "Allow Tact to record the screen in System Settings, then reopen Tact")) {
+                        Button(L10n.tr("打开系统设置", "Open System Settings")) { Permission.screenRecording.openSystemSettings() }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
-                SettingRow(title: "测试模式", detail: "在微信里按快捷键，只显示本机识别的画面文字，不调用 AI", divider: false) {
-                    Toggle("测试模式", isOn: Binding(get: { settings.ocrTestMode }, set: { settings.setOCRTestMode($0) }))
+                SettingRow(title: L10n.tr("测试模式", "Test mode"), detail: L10n.tr("在微信里按快捷键，只显示本机识别的画面文字，不调用 AI", "Press the shortcut in WeChat to preview locally recognized text without calling AI"), divider: false) {
+                    Toggle(L10n.tr("测试模式", "Test mode"), isOn: Binding(get: { settings.ocrTestMode }, set: { settings.setOCRTestMode($0) }))
                         .labelsHidden().toggleStyle(.switch)
                 }
             }
@@ -81,20 +81,19 @@ private struct WeChatCard: View {
 struct ChatToolList: View {
     @ObservedObject var settings: PlatformSettings
     let onAdd: () -> Void
-    @State private var expandedID: String?
     @State private var removing: PlatformEntry?
 
     var body: some View {
-        Card(title: "插件") {
+        Card(title: L10n.tr("插件", "Plugins")) {
             if settings.entries.isEmpty {
                 emptyRow
             } else {
                 ForEach(Array(settings.entries.enumerated()), id: \.element.id) { index, entry in
-                    ChatToolRow(entry: entry, expanded: expandedID == entry.id,
+                    ChatToolRow(entry: entry, expanded: settings.expandedToolID == entry.id,
                                 checking: settings.checkingID == entry.id, busy: settings.busy,
                                 toggleExpanded: { toggle(entry) },
                                 setEnabled: { setEnabled($0, entry: entry) })
-                    if expandedID == entry.id {
+                    if settings.expandedToolID == entry.id {
                         ChatToolDetail(settings: settings, entry: entry) { removing = entry }
                             .transition(.opacity)
                     }
@@ -103,21 +102,18 @@ struct ChatToolList: View {
             }
         }
         .animation(Motion.spring, value: settings.entries.map(\.id))
-        .onAppear {
-            // A plugin that isn't on yet still has setup to do: show it.
-            if expandedID == nil, let pending = settings.entries.first(where: { !$0.enabled }) { open(pending.id, animated: false) }
-        }
+        .onAppear { settings.prepareToolList() }
         .onChange(of: settings.entries.map(\.id)) { before, after in
             // A plugin just imported opens on its setup.
             if let added = after.first(where: { !before.contains($0) }) { open(added) }
         }
-        .confirmationDialog("移除 \(removing?.name ?? "")？", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
-            Button("移除", role: .destructive) {
+        .confirmationDialog(L10n.tr("移除 \(removing?.name ?? "")？", "Remove \(removing?.name ?? "")?"), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button(L10n.tr("移除", "Remove"), role: .destructive) {
                 if let removing { settings.select(removing.id); settings.removeSelected() }
                 removing = nil
             }
         } message: {
-            Text("Tact 不再使用它。插件文件留在配置文件夹里，可以再导入。")
+            Text(L10n.tr("Tact 不再使用它。插件文件留在配置文件夹里，可以再导入。", "Tact will stop using this plugin. Its files stay in the configuration folder so you can import it again."))
         }
     }
 
@@ -125,24 +121,24 @@ struct ChatToolList: View {
         HStack(spacing: 12) {
             IconTile(symbol: "plus", size: 30)
             VStack(alignment: .leading, spacing: 3) {
-                Text("还没有导入插件").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-                Text("导入 IM 的开发者或服务商提供的插件，就能在它的聊天窗口里生成建议。")
+                Text(L10n.tr("还没有导入插件", "No plugins imported yet")).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+                Text(L10n.tr("导入 IM 的开发者或服务商提供的插件，就能在它的聊天窗口里生成建议。", "Import a plugin from your chat app developer or provider to get suggestions in its chat windows."))
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
-            Button("添加聊天工具", action: onAdd).buttonStyle(PrimaryButtonStyle()).disabled(settings.busy)
+            Button(L10n.tr("添加聊天工具", "Add chat tool"), action: onAdd).buttonStyle(PrimaryButtonStyle()).disabled(settings.busy)
         }
         .padding(16)
     }
 
     private func open(_ id: String, animated: Bool = true) {
         settings.select(id)
-        withAnimation(animated ? Motion.spring : nil) { expandedID = id }
+        withAnimation(animated ? Motion.spring : nil) { settings.expandedToolID = id }
     }
 
     private func toggle(_ entry: PlatformEntry) {
-        if expandedID == entry.id {
-            withAnimation(Motion.spring) { expandedID = nil }
+        if settings.expandedToolID == entry.id {
+            withAnimation(Motion.spring) { settings.expandedToolID = nil }
         } else {
             open(entry.id)
         }
@@ -193,11 +189,11 @@ private struct ChatToolRow: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .accessibilityLabel("\(entry.name)，\(entry.status)")
-            .accessibilityHint(expanded ? "收起详情" : "展开详情")
+            .accessibilityLabel(L10n.tr("\(entry.name)，\(entry.status)", "\(entry.name), \(entry.status)"))
+            .accessibilityHint(expanded ? L10n.tr("收起详情", "Collapse details") : L10n.tr("展开详情", "Expand details"))
 
             if checking { ProgressView().controlSize(.small).transition(.opacity) }
-            Toggle("启用 \(entry.name)", isOn: Binding(get: { entry.enabled }, set: setEnabled))
+            Toggle(L10n.tr("启用 \(entry.name)", "Enable \(entry.name)"), isOn: Binding(get: { entry.enabled }, set: setEnabled))
                 .labelsHidden().toggleStyle(.switch)
                 .disabled(busy || !entry.supported && !entry.enabled)
         }
@@ -225,10 +221,10 @@ private struct ChatToolDetail: View {
                     DisclosureGroup(isExpanded: $showsSetup) {
                         PluginPreparation(setup: settings.selectedSetup, pluginDirectory: settings.selectedPluginDirectory)
                             .padding(.top, 10)
-                    } label: { sectionTitle("安装与登录") }
+                    } label: { sectionTitle(L10n.tr("安装与登录", "Install and sign in")) }
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        sectionTitle("准备")
+                        sectionTitle(L10n.tr("准备", "Preparation"))
                         PluginPreparation(setup: settings.selectedSetup, pluginDirectory: settings.selectedPluginDirectory)
                     }
                 }
@@ -236,9 +232,9 @@ private struct ChatToolDetail: View {
                 capabilities
                 DisclosureGroup(isExpanded: $showsCalibration) {
                     calibration.padding(.top, 10)
-                } label: { sectionTitle("会话识别校准") }
+                } label: { sectionTitle(L10n.tr("会话识别校准", "Chat recognition calibration")) }
             } else {
-                Text("插件文件有问题，没法使用。可以移除后重新导入提供方的新版本。")
+                Text(L10n.tr("插件文件有问题，没法使用。可以移除后重新导入提供方的新版本。", "The plugin files are invalid. Remove the plugin and import a new version from its provider."))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             footer
@@ -250,19 +246,19 @@ private struct ChatToolDetail: View {
 
     private var connection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("连接")
+            sectionTitle(L10n.tr("连接", "Connection"))
             if !entry.enabled, let command = settings.selectedCommand {
-                Text("检测会在本机运行这个插件（\(command)），读取 \(entry.name) 的会话列表，不会发送任何消息。只启用你信任的人提供的插件。")
+                Text(L10n.tr("检测会在本机运行这个插件（\(command)），读取 \(entry.name) 的会话列表，不会发送任何消息。只启用你信任的人提供的插件。", "This check runs the plugin (\(command)) on your Mac and reads the \(entry.name) chat list without sending messages. Only enable plugins from people you trust."))
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 12) {
                 if entry.enabled {
-                    Button(settings.checkingID == entry.id ? "检测中…" : "重新检测") {
+                    Button(settings.checkingID == entry.id ? L10n.tr("检测中…", "Checking…") : L10n.tr("重新检测", "Check again")) {
                         Task { await settings.testSelected() }
                     }
                     .buttonStyle(SecondaryButtonStyle())
                 } else {
-                    Button(settings.checkingID == entry.id ? "检测中…" : "检测并启用") {
+                    Button(settings.checkingID == entry.id ? L10n.tr("检测中…", "Checking…") : L10n.tr("检测并启用", "Check and enable")) {
                         Task { await settings.checkAndEnable(id: entry.id) }
                     }
                     .buttonStyle(PrimaryButtonStyle())
@@ -280,41 +276,41 @@ private struct ChatToolDetail: View {
     private var capabilities: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !entry.supportsSuggestions {
-                Text("这个插件只能读取消息，还不能在输入框里给建议。")
+                Text(L10n.tr("这个插件只能读取消息，还不能在输入框里给建议。", "This plugin can read messages but cannot offer suggestions in the input yet."))
                     .font(.system(size: 12)).foregroundStyle(Theme.warn)
             }
-            Text("能做：" + entry.capabilityLabels.joined(separator: " · "))
+            Text(L10n.tr("能做：", "Capabilities: ") + entry.capabilityLabels.joined(separator: " · "))
                 .font(.system(size: 11.5)).foregroundStyle(.secondary)
         }
     }
 
     private var calibration: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("建议出现在错误的会话里时才需要调整。打开测试模式后按快捷键，只识别当前会话，不生成回复。")
+            Text(L10n.tr("建议出现在错误的会话里时才需要调整。打开测试模式后按快捷键，只识别当前会话，不生成回复。", "Adjust these settings if suggestions appear in the wrong chat. In test mode, the shortcut only identifies the current chat without generating a reply."))
                 .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Card {
-                SettingRow(title: "应用标识", detail: "用来认出前台的聊天应用，由插件提供") {
+                SettingRow(title: L10n.tr("应用标识", "App identifiers"), detail: L10n.tr("用来认出前台的聊天应用，由插件提供", "Provided by the plugin to identify the chat app in front")) {
                     TextField("Bundle ID", text: $settings.targetBundleID)
                         .font(Theme.mono(11.5, weight: .regular)).frame(width: 190)
                 }
-                SettingRow(title: "顶部栏位置", detail: "会话标题区距窗口顶部的距离和高度，单位是点") {
+                SettingRow(title: L10n.tr("顶部栏位置", "Header position"), detail: L10n.tr("会话标题区距窗口顶部的距离和高度，单位是点", "Distance from the window top and height of the chat title area, in points")) {
                     HStack(spacing: 8) {
                         Stepper("\(Int(settings.headerTopOffset))", value: $settings.headerTopOffset, in: 0...200, step: 2)
-                            .frame(width: 76).help("距窗口顶部")
+                            .frame(width: 76).help(L10n.tr("距窗口顶部", "Distance from window top"))
                         Stepper("\(Int(settings.headerHeight))", value: $settings.headerHeight, in: 20...160, step: 4)
-                            .frame(width: 76).help("截取高度")
+                            .frame(width: 76).help(L10n.tr("截取高度", "Capture height"))
                     }
                     .font(Theme.mono(12))
                 }
-                SettingRow(title: "测试模式", detail: "触发时只识别会话") {
-                    Toggle("测试模式", isOn: Binding(get: { settings.ocrTestMode }, set: { settings.setOCRTestMode($0) }))
+                SettingRow(title: L10n.tr("测试模式", "Test mode"), detail: L10n.tr("触发时只识别会话", "Only identify the chat when triggered")) {
+                    Toggle(L10n.tr("测试模式", "Test mode"), isOn: Binding(get: { settings.ocrTestMode }, set: { settings.setOCRTestMode($0) }))
                         .labelsHidden().toggleStyle(.switch)
                 }
-                SettingRow(title: "保存顶部栏截图", detail: "下一次触发时存到 ~/.tact/debug/", divider: false) {
-                    Button("保存下一次") { settings.saveNextHeader() }.buttonStyle(SecondaryButtonStyle())
+                SettingRow(title: L10n.tr("保存顶部栏截图", "Save header screenshot"), detail: L10n.tr("下一次触发时存到 ~/.tact/debug/", "Save to ~/.tact/debug/ on the next trigger"), divider: false) {
+                    Button(L10n.tr("保存下一次", "Save next capture")) { settings.saveNextHeader() }.buttonStyle(SecondaryButtonStyle())
                 }
             }
-            Button("保存校准") { settings.saveSelectedDesktop() }
+            Button(L10n.tr("保存校准", "Save calibration")) { settings.saveSelectedDesktop() }
                 .buttonStyle(SecondaryButtonStyle()).disabled(settings.busy)
         }
     }
@@ -325,8 +321,8 @@ private struct ChatToolDetail: View {
                 Text(identity).font(Theme.mono(10.5, weight: .regular)).foregroundStyle(.secondary).textSelection(.enabled)
             }
             Spacer(minLength: 8)
-            Button("打开插件文件夹") { settings.openPluginFolder() }.buttonStyle(QuietButtonStyle())
-            Button("移除", action: remove).buttonStyle(QuietButtonStyle(tint: Theme.danger)).disabled(settings.busy)
+            Button(L10n.tr("打开插件文件夹", "Open plugin folder")) { settings.openPluginFolder() }.buttonStyle(QuietButtonStyle())
+            Button(L10n.tr("移除", "Remove"), action: remove).buttonStyle(QuietButtonStyle(tint: Theme.danger)).disabled(settings.busy)
         }
     }
 

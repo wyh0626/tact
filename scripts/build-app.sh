@@ -71,6 +71,7 @@ cp "$WORK/tactd" "$APP/Contents/MacOS/tactd"
 cp "$REPO/engine/bin/llama-server" "$APP/Contents/MacOS/llama-server"
 cp "$REPO/engine/bin/llama.cpp-LICENSE" "$APP/Contents/Resources/llama.cpp-LICENSE"
 cp "$REPO/style.example.md" "$APP/Contents/Resources/style.example.md"
+cp "$REPO/style.example.en.md" "$APP/Contents/Resources/style.example.en.md"
 cp "$REPO"/assets/menubar/TactMenuBarTemplate*.png "$APP/Contents/Resources/"
 cp "$REPO/docs/ADAPTER.md" "$APP/Contents/Resources/PluginSDK/ADAPTER.md"
 cp "$REPO/plugins/template/manifest.json" "$REPO/plugins/template/adapter.py" "$REPO/plugins/template/README.md" "$APP/Contents/Resources/PluginSDK/template/"
@@ -100,6 +101,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+  <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>

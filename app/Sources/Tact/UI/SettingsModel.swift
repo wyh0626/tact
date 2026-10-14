@@ -7,13 +7,13 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "通用"
-        case .model: return "模型"
-        case .chat: return "聊天工具"
-        case .style: return "表达风格"
-        case .privacy: return "隐私"
-        case .stats: return "统计"
-        case .about: return "关于"
+        case .general: return L10n.tr("通用", "General")
+        case .model: return L10n.tr("模型", "Model")
+        case .chat: return L10n.tr("聊天工具", "Chat tools")
+        case .style: return L10n.tr("表达风格", "Writing style")
+        case .privacy: return L10n.tr("隐私", "Privacy")
+        case .stats: return L10n.tr("统计", "Statistics")
+        case .about: return L10n.tr("关于", "About")
         }
     }
 
@@ -42,11 +42,11 @@ enum TriggerChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .doubleControl: return "双击 ⌃ Control（推荐）"
-        case .doubleOption: return "双击 ⌥ Option"
-        case .doubleCommand: return "双击 ⌘ Command"
-        case .doubleShift: return "双击 ⇧ Shift"
-        case .combo: return "组合键"
+        case .doubleControl: return L10n.tr("双击 ⌃ Control（推荐）", "Double ⌃ (recommended)")
+        case .doubleOption: return L10n.tr("双击 ⌥ Option", "Double ⌥ Option")
+        case .doubleCommand: return L10n.tr("双击 ⌘ Command", "Double ⌘ Command")
+        case .doubleShift: return L10n.tr("双击 ⇧ Shift", "Double ⇧ Shift")
+        case .combo: return L10n.tr("组合键", "Keyboard shortcut")
         }
     }
 
@@ -54,11 +54,11 @@ enum TriggerChoice: String, CaseIterable, Identifiable {
     /// app or input method takes by default.
     var note: String {
         switch self {
-        case .doubleControl: return "只有把系统听写设成「按两下 Control」时会冲突（系统设置 → 键盘 → 听写）"
-        case .doubleOption: return "Claude 桌面版的快速输入默认就是双击 ⌥，装了 Claude 会一起弹出来"
-        case .doubleCommand: return "Siri 可以设成「按两下 Command」，开了的话会冲突（系统设置 → Apple 智能与 Siri）"
-        case .doubleShift: return "中文输入法用 ⇧ 切换中英文，连按两下会来回切换，不建议用"
-        case .combo: return "避开 ⌘Space（聚焦搜索）和 ⌃Space（切换输入法）"
+        case .doubleControl: return L10n.tr("只有把系统听写设成「按两下 Control」时会冲突（系统设置 → 键盘 → 听写）", "Conflicts if Dictation uses “Press Control Key Twice” (System Settings → Keyboard → Dictation).")
+        case .doubleOption: return L10n.tr("Claude 桌面版的快速输入默认就是双击 ⌥，装了 Claude 会一起弹出来", "Claude desktop uses double-press ⌥ for quick entry by default, so it may also open.")
+        case .doubleCommand: return L10n.tr("Siri 可以设成「按两下 Command」，开了的话会冲突（系统设置 → Apple 智能与 Siri）", "Conflicts if Siri uses “Press Command Key Twice” (System Settings → Apple Intelligence & Siri).")
+        case .doubleShift: return L10n.tr("中文输入法用 ⇧ 切换中英文，连按两下会来回切换，不建议用", "Chinese input methods use ⇧ to switch languages. Pressing it twice toggles back and forth, so this is not recommended.")
+        case .combo: return L10n.tr("避开 ⌘Space（聚焦搜索）和 ⌃Space（切换输入法）", "Avoid ⌘Space (Spotlight) and ⌃Space (input source switching).")
         }
     }
 
@@ -170,7 +170,7 @@ final class SettingsModel: ObservableObject {
     /// Writes app-side settings and applies them to the running controller.
     func applyGeneral() {
         guard TriggerSpec.parse(hotkeySpec) != nil, trigger != .combo || HotKey(spec: comboSpec) != nil else {
-            problem = "快捷键写法不对，比如 ctrl+option+space"
+            problem = L10n.tr("快捷键写法不对，比如 ctrl+option+space", "Invalid shortcut. Try ctrl+option+space.")
             return
         }
         update { file in
@@ -206,7 +206,7 @@ final class SettingsModel: ObservableObject {
             styleSaved = true
             problem = nil
         } catch {
-            problem = "保存表达风格失败：\(error.localizedDescription)"
+            problem = L10n.tr("保存表达风格失败：\(error.localizedDescription)", "Could not save writing style: \(error.localizedDescription)")
         }
     }
 
@@ -225,7 +225,7 @@ final class SettingsModel: ObservableObject {
             controller.apply(config)
             problem = configProblem ?? controller.hotKeyProblem
         } catch {
-            problem = "保存配置失败：\(error.localizedDescription)"
+            problem = L10n.tr("保存配置失败：\(error.localizedDescription)", "Could not save configuration: \(error.localizedDescription)")
             return
         }
         guard restartEngine else { return }

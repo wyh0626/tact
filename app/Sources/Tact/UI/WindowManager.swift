@@ -18,7 +18,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
         if settingsWindow == nil {
             let model = SettingsModel(controller: controller)
             settingsModel = model
-            settingsWindow = makeWindow(SettingsView(model: model), title: "Tact 设置")
+            settingsWindow = makeWindow(SettingsView(model: model), title: L10n.tr("Tact 设置", "Tact Settings"))
         }
         if let pane { settingsModel?.pane = pane }
         settingsModel?.refreshStatus()
@@ -40,13 +40,13 @@ final class WindowManager: NSObject, NSWindowDelegate {
         if onboardingWindow == nil {
             let model = OnboardingModel(controller: controller)
             model.onFinish = { [weak self] in self?.onboardingWindow?.close() }
-            onboardingWindow = makeWindow(OnboardingView(model: model), title: "欢迎使用 Tact")
+            onboardingWindow = makeWindow(OnboardingView(model: model), title: L10n.tr("欢迎使用 Tact", "Welcome to Tact"))
         }
         present(onboardingWindow)
     }
 
     private func makeWindow<V: View>(_ view: V, title: String) -> NSWindow {
-        let host = NSHostingView(rootView: view)
+        let host = NSHostingView(rootView: LocalizedContent { view })
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize),
                               styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
@@ -59,6 +59,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
         window.delegate = self
         window.center()
         return window
+    }
+
+    func refreshLanguage() {
+        settingsWindow?.title = L10n.tr("Tact 设置", "Tact Settings")
+        onboardingWindow?.title = L10n.tr("欢迎使用 Tact", "Welcome to Tact")
     }
 
     private func present(_ window: NSWindow?) {

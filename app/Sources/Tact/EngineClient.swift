@@ -12,12 +12,12 @@ enum EngineError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .pathTooLong: return "引擎 socket 路径太长"
-        case .socket(let e), .io(let e): return "和引擎通信出错：\(String(cString: strerror(e)))"
-        case .connect: return "连不上引擎，先运行 tactd serve，或在配置里填 app.engine_command"
-        case .timeout: return "引擎响应超时"
-        case .cancelled: return "已取消"
-        case .badResponse: return "引擎返回了无法解析的内容"
+        case .pathTooLong: return L10n.tr("引擎 socket 路径太长", "The engine socket path is too long")
+        case .socket(let e), .io(let e): return L10n.tr("和引擎通信出错：\(String(cString: strerror(e)))", "Engine communication failed: \(String(cString: strerror(e)))")
+        case .connect: return L10n.tr("连不上引擎，先运行 tactd serve，或在配置里填 app.engine_command", "Cannot connect to the engine. Run tactd serve or set app.engine_command in the configuration")
+        case .timeout: return L10n.tr("引擎响应超时", "The engine timed out")
+        case .cancelled: return L10n.tr("已取消", "Cancelled")
+        case .badResponse: return L10n.tr("引擎返回了无法解析的内容", "The engine returned an unreadable response")
         }
     }
 }
@@ -179,14 +179,14 @@ struct EngineResponse {
         lastMessageID = d["last_message_id"] as? String
         var n: [String] = []
         var short: [String] = []
-        if (d["commits"] as? Bool) == true { n.append("含承诺，发出前确认"); short.append("含承诺") }
-        if (d["sensitive"] as? Bool) == true { n.append("含链接、邮箱或长数字"); short.append("含链接/号码") }
+        if (d["commits"] as? Bool) == true { n.append(L10n.tr("含承诺，发出前确认", "Contains a commitment; review before sending")); short.append(L10n.tr("含承诺", "Commitment")) }
+        if (d["sensitive"] as? Bool) == true { n.append(L10n.tr("含链接、邮箱或长数字", "Contains a link, email address, or long number")); short.append(L10n.tr("含链接/号码", "Link/number")) }
         notes = n
         shortNotes = short
         let t = d["timing_ms"] as? [String: Any] ?? [:]
         historyCached = (t["history_cached"] as? NSNumber)?.intValue == 1
         timing = t.keys.filter { $0 != "history_cached" }.sorted().map { "\($0) \(t[$0] ?? "")ms" }
-            .joined(separator: " · ") + (historyCached ? "（消息来自预取）" : "")
+            .joined(separator: " · ") + (historyCached ? L10n.tr("（消息来自预取）", " (prefetched messages)") : "")
         candidates = (d["candidates"] as? [String]) ?? []
     }
 
@@ -194,17 +194,17 @@ struct EngineResponse {
     var friendlyError: String {
         switch errorCode {
         case "not_resolved":
-            return "没认出当前会话（识别到「\(matchedLine ?? "")」）"
+            return L10n.tr("没认出当前会话（识别到「\(matchedLine ?? "")」）", "Could not identify the current chat (recognized “\(matchedLine ?? "")”)")
         case "ambiguous":
-            return "有多个同名会话，这次不建议：\(candidates.joined(separator: " / "))"
+            return L10n.tr("有多个同名会话，这次不建议：\(candidates.joined(separator: " / "))", "Skipped suggestion because multiple chats have the same name: \(candidates.joined(separator: " / "))")
         case "draft_conflict":
-            return "输入框内容和另一个会话的草稿一样，会话可能认错了"
+            return L10n.tr("输入框内容和另一个会话的草稿一样，会话可能认错了", "The input matches a draft in another chat. The current chat may have been identified incorrectly")
         case "adapter_error":
-            return "读取消息失败：\(error ?? "")"
+            return L10n.tr("读取消息失败：\(error ?? "")", "Could not read messages: \(error ?? "")")
         case "model_error", "model_bad_output":
-            return "模型出错：\(error ?? "")"
+            return L10n.tr("模型出错：\(error ?? "")", "Model error: \(error ?? "")")
         default:
-            return error ?? "引擎出错"
+            return error ?? L10n.tr("引擎出错", "Engine error")
         }
     }
 }

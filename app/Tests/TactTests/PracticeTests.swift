@@ -28,8 +28,13 @@ struct PracticeTests {
         return chat
     }
 
+    /// A key pressed on its own. An event made from no source carries the
+    /// modifiers held on the real keyboard at that moment, which would turn
+    /// Tab into a shortcut whenever someone types while the tests run.
     private func key(_ code: CGKeyCode) -> CGEvent {
-        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)!
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)!
+        event.flags = []
+        return event
     }
 
     private func wait(until done: () -> Bool) async {
@@ -77,7 +82,7 @@ struct PracticeTests {
         defer { chat.reset(detail: ""); chat.inputView?.removeFromSuperview() }
         chat.start()
         await wait { chat.done.contains(.suggest) }
-        #expect(chat.note?.contains("示例") == true)
+        #expect(chat.note?.contains(L10n.tr("示例", "example")) == true)
         #expect(chat.handle(type: .keyDown, event: key(48)))
         #expect(chat.draft == PracticeChat.example(for: "complete"))
     }
@@ -105,6 +110,23 @@ struct PracticeTests {
     }
 
     @Test func practiceComesRightAfterTheModel() {
-        #expect(OnboardingStep.allCases.map(\.title) == ["欢迎", "授权", "模型", "试一试", "聊天工具", "完成"])
+        #expect(OnboardingStep.allCases.map(\.title) == [L10n.tr("欢迎", "Welcome"), L10n.tr("授权", "Permissions"),
+                                                              L10n.tr("模型", "Model"), L10n.tr("试一试", "Try it"),
+                                                              L10n.tr("聊天工具", "Chat tools"), L10n.tr("完成", "Done")])
+    }
+
+    @Test func languageChangePreservesDraftSentMessagesAndProgress() {
+        let chat = L10n.$overrideLanguage.withValue(.simplifiedChinese) { practice { _ in nil } }
+        defer { chat.reset(detail: ""); chat.inputView?.removeFromSuperview() }
+        chat.draft = "Keep this sent reply"
+        chat.send()
+        chat.draft = "Keep this unsent draft"
+        let progress = chat.done
+        L10n.$overrideLanguage.withValue(.english) {
+            chat.refreshLanguage()
+            #expect(Array(chat.messages.prefix(5)) == PracticeChat.opening)
+            #expect(chat.messages.last?.text == "Keep this sent reply")
+            #expect(chat.draft == "Keep this unsent draft" && chat.done == progress)
+        }
     }
 }

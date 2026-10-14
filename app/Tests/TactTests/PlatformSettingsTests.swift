@@ -38,8 +38,8 @@ struct PlatformSettingsTests {
             #expect(selected.supported)
             #expect(!selected.enabled)
             #expect(selected.removable)
-            #expect(selected.status.contains("未启用") && selected.tone == .neutral)
-            #expect(selected.capabilityLabels.contains("消息读取"))
+            #expect(selected.status.contains(L10n.tr("未启用", "Disabled")) && selected.tone == .neutral)
+            #expect(selected.capabilityLabels.contains(L10n.tr("消息读取", "Read messages")))
 
             let saved = try ConfigFile.load(from: configURL.path)
             let instances = try #require(saved.value("platforms") as? [[String: Any]])
@@ -72,12 +72,52 @@ struct PlatformSettingsTests {
         }
     }
 
+    @Test func languageRefreshAndRepeatedSelectionPreserveUnsavedCalibration() async throws {
+        try await L10n.$overrideLanguage.withValue(.simplifiedChinese) {
+            try await withFixture { settings, configURL, source, marker in
+                await settings.importPlugin(from: source)
+                let firstID = try #require(settings.selectedID)
+                await settings.importPlugin(from: source)
+                let selectedID = try #require(settings.selectedID)
+                #expect(selectedID != firstID)
+                let original = try Data(contentsOf: configURL)
+                settings.prepareToolList()
+                #expect(settings.expandedToolID == selectedID)
+
+                settings.targetBundleID = "test.unsaved.desktop"
+                settings.headerTopOffset = 42
+                settings.headerHeight = 88
+                settings.select(selectedID)
+                L10n.$overrideLanguage.withValue(.english) {
+                    NotificationCenter.default.post(name: .tactLanguageDidChange, object: nil)
+                    // LocalizedContent recreates the list and calls onAppear.
+                    settings.prepareToolList()
+                    settings.select(selectedID)
+                    #expect(settings.selected?.capabilityLabels.contains("Read messages") == true)
+                    #expect(settings.selected?.status.contains("Disabled") == true)
+                }
+
+                #expect(settings.selectedID == selectedID)
+                #expect(settings.expandedToolID == selectedID)
+                #expect(settings.targetBundleID == "test.unsaved.desktop")
+                #expect(settings.headerTopOffset == 42)
+                #expect(settings.headerHeight == 88)
+                // A deliberate collapse also survives view recreation.
+                settings.expandedToolID = nil
+                settings.prepareToolList()
+                #expect(settings.expandedToolID == nil)
+                #expect(try Data(contentsOf: configURL) == original)
+                #expect(!FileManager.default.fileExists(atPath: marker.path))
+            }
+        }
+    }
+
     @Test func invalidManifestDoesNotChangeConfigurationOrSelection() async throws {
         try await withFixture(manifestChanges: ["protocol_version": 2]) { settings, configURL, source, marker in
             let original = try Data(contentsOf: configURL)
             let selection = settings.selectedID
             await settings.importPlugin(from: source)
-            #expect(settings.problem?.contains("导入失败") == true)
+            #expect(settings.problem?.contains(L10n.tr("导入失败", "Import failed")) == true)
             #expect(!settings.busy)
             #expect(settings.selectedID == selection)
             #expect(try Data(contentsOf: configURL) == original)

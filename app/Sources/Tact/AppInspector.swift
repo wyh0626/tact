@@ -168,7 +168,7 @@ enum AppInspector {
             try encoder.encode(report).write(to: URL(fileURLWithPath: output))
             return true
         } catch {
-            FileHandle.standardError.write(Data("写不了报告：\(error.localizedDescription)\n".utf8))
+            FileHandle.standardError.write(Data(L10n.tr("写不了报告：\(error.localizedDescription)\n", "Could not write the report: \(error.localizedDescription)\n").utf8))
             return false
         }
     }
@@ -176,7 +176,7 @@ enum AppInspector {
     private static func inspect(_ start: Report) async -> Report {
         var report = start
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: report.bundleID).first else {
-            report.problems.append("应用没有在运行")
+            report.problems.append(L10n.tr("应用没有在运行", "The app is not running"))
             return report
         }
         report.running = true
@@ -202,7 +202,7 @@ enum AppInspector {
             report.accessibilityEnhanced = tree(of: root)
             AXUIElementSetAttributeValue(root, enhanced, before ? kCFBooleanTrue : kCFBooleanFalse)
         } else {
-            report.problems.append("没有辅助功能权限")
+            report.problems.append(L10n.tr("没有辅助功能权限", "Accessibility access has not been granted"))
         }
         if report.screenRecordingAllowed {
             do {
@@ -216,10 +216,10 @@ enum AppInspector {
                     report.wechat = try weChatShape(image, scale: CGFloat(image.width) / max(1, size.width))
                 }
             } catch {
-                report.problems.append("截图识别失败：\(error.localizedDescription)")
+                report.problems.append(L10n.tr("截图识别失败：\(error.localizedDescription)", "Screen recognition failed: \(error.localizedDescription)"))
             }
         } else {
-            report.problems.append("没有屏幕录制权限")
+            report.problems.append(L10n.tr("没有屏幕录制权限", "Screen Recording access has not been granted"))
         }
         return report
     }

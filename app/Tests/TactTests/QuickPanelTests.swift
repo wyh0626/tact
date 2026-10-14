@@ -112,7 +112,7 @@ struct QuickPanelTests {
         #expect(settings.summary == "OpenAI · GPT-6.1-Sol")
         settings.useLocalModel(LocalModel.catalog[0])
         settings.choose(.local)
-        #expect(settings.summary == "本机 · Qwen3 1.7B")
+        #expect(settings.summary == L10n.tr("本机 · Qwen3 1.7B", "Local · Qwen3 1.7B"))
     }
 }
 

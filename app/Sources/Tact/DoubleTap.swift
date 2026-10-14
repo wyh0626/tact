@@ -66,10 +66,10 @@ enum TriggerSpec: Equatable {
         guard parts.first == "double" else { return .combo(spec) }
         guard parts.count == 2 else { return nil }
         switch parts[1] {
-        case "ctrl", "control", "⌃": return .doubleTap(.maskControl, display: "双击 ⌃")
-        case "cmd", "command", "⌘": return .doubleTap(.maskCommand, display: "双击 ⌘")
-        case "opt", "option", "alt", "⌥": return .doubleTap(.maskAlternate, display: "双击 ⌥")
-        case "shift", "⇧": return .doubleTap(.maskShift, display: "双击 ⇧")
+        case "ctrl", "control", "⌃": return .doubleTap(.maskControl, display: L10n.tr("双击 ⌃", "Double-tap ⌃"))
+        case "cmd", "command", "⌘": return .doubleTap(.maskCommand, display: L10n.tr("双击 ⌘", "Double-tap ⌘"))
+        case "opt", "option", "alt", "⌥": return .doubleTap(.maskAlternate, display: L10n.tr("双击 ⌥", "Double-tap ⌥"))
+        case "shift", "⇧": return .doubleTap(.maskShift, display: L10n.tr("双击 ⇧", "Double-tap ⇧"))
         default: return nil
         }
     }

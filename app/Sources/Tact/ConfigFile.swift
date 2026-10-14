@@ -74,7 +74,7 @@ struct ConfigFile {
     }
 
     /// Written on first launch of the app bundle, when there is no config yet.
-    static func initial(styleFile: String, feedbackFile: String) -> ConfigFile {
+    static func initial(styleFile: String, feedbackFile: String, defaultStyleSection: String = "工作聊天") -> ConfigFile {
         ConfigFile(root: [
             "socket": "~/.tact/engine.sock",
             "model": [
@@ -95,7 +95,7 @@ struct ConfigFile {
             ],
             "style": [
                 "file": styleFile,
-                "default_section": "工作聊天",
+                "default_section": defaultStyleSection,
             ],
             "feedback": [
                 "file": feedbackFile,
@@ -130,8 +130,24 @@ enum KeyPolicy: Hashable {
 /// endpoint works through "custom".
 struct ModelProvider: Identifiable, Hashable {
     let id: String
-    let name: String
-    let detail: String
+    var name: String {
+        switch id {
+        case "chatgpt": return L10n.tr("ChatGPT 账号", "ChatGPT account")
+        case "deepseek": return "DeepSeek"
+        case "openai": return "OpenAI"
+        case "local": return L10n.tr("本机", "Local")
+        default: return L10n.tr("自定义", "Custom")
+        }
+    }
+    var detail: String {
+        switch id {
+        case "chatgpt": return L10n.tr("用你的 Plus / Pro 套餐额度，不需要 API Key", "Uses your Plus / Pro plan. No API key needed.")
+        case "deepseek": return L10n.tr("云端，便宜、中文好", "Cloud model; affordable, strong in Chinese")
+        case "openai": return L10n.tr("ChatGPT 账号或 API Key", "ChatGPT account or API key")
+        case "local": return L10n.tr("下载模型到这台 Mac，聊天内容不出电脑", "Download to this Mac; keep chats on-device")
+        default: return L10n.tr("任何兼容 OpenAI 接口的服务，比如 Ollama、公司网关", "Any OpenAI-compatible service, such as Ollama")
+        }
+    }
     let baseURL: String
     let defaultModel: String
     let key: KeyPolicy
@@ -142,22 +158,22 @@ struct ModelProvider: Identifiable, Hashable {
     var usesSignIn = false
 
     static let chatgpt = ModelProvider(
-        id: "chatgpt", name: "ChatGPT 账号", detail: "用你的 Plus / Pro 套餐额度，不需要 API Key",
+        id: "chatgpt",
         // Luna costs less of the plan than the larger models; plenty for a reply.
         baseURL: "https://api.openai.com/v1", defaultModel: "gpt-5.6-luna", key: .none, speed: .chatgpt,
         symbol: "person.crop.circle", usesSignIn: true)
     static let deepseek = ModelProvider(
-        id: "deepseek", name: "DeepSeek", detail: "云端，便宜、中文好", baseURL: "https://api.deepseek.com/v1",
+        id: "deepseek", baseURL: "https://api.deepseek.com/v1",
         defaultModel: "deepseek-flash", key: .required, speed: .deepseek, symbol: "cloud")
     static let openai = ModelProvider(
-        id: "openai", name: "OpenAI", detail: "ChatGPT 账号或 API Key", baseURL: "https://api.openai.com/v1",
+        id: "openai", baseURL: "https://api.openai.com/v1",
         defaultModel: "", key: .required, speed: .openai, symbol: "sparkles")
     /// A downloaded model run by the llama-server inside the app.
     static let local = ModelProvider(
-        id: "local", name: "本机", detail: "下载模型到这台 Mac，聊天内容不出电脑", baseURL: "",
+        id: "local", baseURL: "",
         defaultModel: "", key: .none, speed: .none, symbol: "desktopcomputer")
     static let custom = ModelProvider(
-        id: "custom", name: "自定义", detail: "任何兼容 OpenAI 接口的服务，比如 Ollama、公司网关", baseURL: "",
+        id: "custom", baseURL: "",
         defaultModel: "", key: .optional, speed: .none, symbol: "slider.horizontal.3")
 
     /// Endpoints a config is matched to by its base URL.

@@ -172,7 +172,7 @@ final class Overlay: NSObject {
 
     nonisolated static func preview(_ text: String) -> (shown: String, note: String?) {
         guard text.count > previewLimit else { return (text, nil) }
-        return (String(text.prefix(previewLimit - 40)) + "…", "全文 \(text.count) 字，填入后可在输入框里检查")
+        return (String(text.prefix(previewLimit - 40)) + "…", L10n.tr("全文 \(text.count) 字，填入后可在输入框里检查", "\(text.count) characters in total; review the full text in the input after accepting"))
     }
 
     /// A suggestion that cannot be ghost text (a rewrite of what was typed,
@@ -200,7 +200,7 @@ final class Overlay: NSObject {
                 .paragraphStyle: Self.spacingBefore(6),
             ]))
         }
-        let keys = footer ?? (rewrite ? "TAB 替换输入框  ·  ESC 取消" : "TAB 填入  ·  ESC 取消")
+        let keys = footer ?? (rewrite ? L10n.tr("TAB 替换输入框  ·  ESC 取消", "TAB Replace input  ·  ESC Cancel") : L10n.tr("TAB 填入  ·  ESC 取消", "TAB Apply  ·  ESC Cancel"))
         body.append(NSAttributedString(string: "\n" + keys, attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor,

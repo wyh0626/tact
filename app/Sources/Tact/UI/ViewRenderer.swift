@@ -38,7 +38,7 @@ enum ViewRenderer {
         var artwork = AppIconView.repositoryArtwork
         if let artworkPath {
             guard let image = NSImage(contentsOfFile: artworkPath) else {
-                FileHandle.standardError.write(Data("读不了图标原图：\(artworkPath)\n".utf8))
+                FileHandle.standardError.write(Data(L10n.tr("读不了图标原图：\(artworkPath)\n", "Could not read the icon artwork: \(artworkPath)\n").utf8))
                 return false
             }
             artwork = image
@@ -48,7 +48,7 @@ enum ViewRenderer {
             try data.write(to: URL(fileURLWithPath: path))
             return true
         } catch {
-            FileHandle.standardError.write(Data("写入图标失败：\(error.localizedDescription)\n".utf8))
+            FileHandle.standardError.write(Data(L10n.tr("写入图标失败：\(error.localizedDescription)\n", "Could not write the icon: \(error.localizedDescription)\n").utf8))
             return false
         }
     }

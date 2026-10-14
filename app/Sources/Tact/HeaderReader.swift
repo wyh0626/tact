@@ -16,10 +16,10 @@ enum HeaderError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .windowNotFound: return "屏幕录制里找不到当前聊天窗口"
-        case .cropFailed: return "顶部栏区域超出了窗口范围"
+        case .windowNotFound: return L10n.tr("屏幕录制里找不到当前聊天窗口", "Could not find the current chat window in screen capture")
+        case .cropFailed: return L10n.tr("顶部栏区域超出了窗口范围", "The header capture area extends beyond the window")
         case .screenRecordingDenied:
-            return "没有屏幕录制权限：到「系统设置 → 隐私与安全性 → 屏幕录制」打开 Tact。刚更新过 Tact 的话，退出后重新打开"
+            return L10n.tr("没有屏幕录制权限：到「系统设置 → 隐私与安全性 → 屏幕录制」打开 Tact。刚更新过 Tact 的话，退出后重新打开", "Screen recording permission is missing. Enable Tact in System Settings → Privacy & Security → Screen Recording. If you just updated Tact, quit and reopen it")
         }
     }
 }

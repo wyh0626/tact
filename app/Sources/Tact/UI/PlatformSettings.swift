@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 struct PlatformEntry: Identifiable {
     let id: String
@@ -25,11 +26,14 @@ struct PlannedPlatform: Identifiable {
 final class PlatformSettings: ObservableObject {
     /// WeChat is built in (see WeChatAssistant) and Telegram has a plugin
     /// (plugins/telegram), so neither is here.
-    static let planned = [PlannedPlatform(id: "dingtalk", name: "钉钉"), .init(id: "feishu", name: "飞书"),
-                          .init(id: "slack", name: "Slack"), .init(id: "discord", name: "Discord")]
+    static var planned: [PlannedPlatform] { [PlannedPlatform(id: "dingtalk", name: L10n.tr("钉钉", "DingTalk")), .init(id: "feishu", name: L10n.tr("飞书", "Lark")),
+                          .init(id: "slack", name: "Slack"), .init(id: "discord", name: "Discord")] }
 
     @Published private(set) var entries: [PlatformEntry] = []
     @Published var selectedID: String?
+    /// Keep the list's expansion through localized view recreation.
+    @Published var expandedToolID: String?
+    private var hasPreparedToolList = false
     @Published var problem: String?
     @Published var busy = false
     /// The plugin whose connection is being checked right now.
@@ -42,7 +46,8 @@ final class PlatformSettings: ObservableObject {
     private let controller: Controller
     private let configPath: String
     private var registry: PlatformRegistry
-    private var checks: [String: (ok: Bool, message: String)] = [:]
+    private var checks: [String: (ok: Bool, message: String, count: Int?)] = [:]
+    private var languageSubscription: AnyCancellable?
     private var verifiedIDs = Set<String>()
     private var pendingRestart: Task<Void, Never>?
     private var pluginDirectory: URL {
@@ -76,10 +81,33 @@ final class PlatformSettings: ObservableObject {
         ocrTestMode = controller.ocrTestMode
         registry = PlatformRegistry(file: file, configPath: configPath)
         rebuild()
-        if let first = entries.first { select(first.id) }
+        if let first = entries.first { loadDesktop(for: first.id) }
+        languageSubscription = NotificationCenter.default.publisher(for: .tactLanguageDidChange)
+            .sink { [weak self] _ in
+                // LanguageSettings posts this notification on the main actor.
+                MainActor.assumeIsolated { self?.rebuild() }
+            }
     }
 
     func select(_ id: String) {
+        guard selectedID != id else { return }
+        loadDesktop(for: id)
+    }
+
+    /// A view can appear again after a language change without changing
+    /// the current tool or undoing a deliberately collapsed row.
+    func prepareToolList() {
+        guard !hasPreparedToolList else { return }
+        hasPreparedToolList = true
+        if let selectedID {
+            expandedToolID = selectedID
+        } else if let pending = entries.first(where: { !$0.enabled }) {
+            select(pending.id)
+            expandedToolID = pending.id
+        }
+    }
+
+    private func loadDesktop(for id: String) {
         guard let registration = registry.registrations.first(where: { $0.id == id }) else { return }
         selectedID = id
         let desktop = registration.desktop ?? .defaultProfile
@@ -91,7 +119,7 @@ final class PlatformSettings: ObservableObject {
     @discardableResult
     func setEnabled(_ enabled: Bool, id: String) -> Bool {
         guard !busy, let entry = entries.first(where: { $0.id == id }), entry.supported || !enabled else { return false }
-        if enabled && !verifiedIDs.contains(id) { problem = "请先检测连接，成功后再启用这个聊天工具"; return false }
+        if enabled && !verifiedIDs.contains(id) { problem = L10n.tr("请先检测连接，成功后再启用这个聊天工具", "Check the connection successfully before enabling this chat tool"); return false }
         let previousCheck = checks[id]
         let wasVerified = verifiedIDs.contains(id)
         if save({ instances in
@@ -165,7 +193,7 @@ final class PlatformSettings: ObservableObject {
         rebuild()
         defer { busy = false; checkingID = nil; rebuild() }
         let result = await controller.checkPlatformConnection(id: id)
-        checks[id] = (result.ok, result.message)
+        checks[id] = (result.ok, result.message, result.count)
         if result.ok { verifiedIDs.insert(id); problem = nil } else { verifiedIDs.remove(id) }
     }
 
@@ -199,7 +227,7 @@ final class PlatformSettings: ObservableObject {
             return true
         } catch {
             try? FileManager.default.removeItem(at: destination)
-            problem = "导入失败：\(error.localizedDescription)"
+            problem = L10n.tr("导入失败：\(error.localizedDescription)", "Import failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -228,13 +256,13 @@ final class PlatformSettings: ObservableObject {
             if let invalid = candidate.registrations.first(where: { candidate in
                 candidate.enabled && !candidate.available && !existing.registrations.contains(where: { $0.id == candidate.id && $0.enabled && !$0.available })
             }) {
-                throw PlatformError.invalid(invalid.error ?? "插件不可用")
+                throw PlatformError.invalid(invalid.error ?? L10n.tr("插件不可用", "Plugin unavailable"))
             }
             let active = candidate.registrations.filter { $0.enabled && $0.available }
             var owners = Set<String>()
             for platform in active {
                 for bundle in Set(platform.desktop?.bundleIDs ?? []) {
-                    guard owners.insert(bundle).inserted else { throw PlatformError.invalid("同一个应用只能启用一个插件，请先停用重复的平台") }
+                    guard owners.insert(bundle).inserted else { throw PlatformError.invalid(L10n.tr("同一个应用只能启用一个插件，请先停用重复的平台", "Only one plugin can be enabled for each app. Disable the duplicate platform first")) }
                 }
             }
             try file.write(to: configPath)
@@ -243,16 +271,16 @@ final class PlatformSettings: ObservableObject {
             verifiedIDs.removeAll()
             problem = nil
             rebuild()
-            if let id = selectedID ?? entries.first?.id { select(id) }
+            if let id = selectedID ?? entries.first?.id { loadDesktop(for: id) }
             if configPath == AppConfig.configPath { controller.apply(AppConfig.load().0) }
         } catch {
-            problem = "保存失败：\(error.localizedDescription)"
+            problem = L10n.tr("保存失败：\(error.localizedDescription)", "Could not save: \(error.localizedDescription)")
             return false
         }
         if restart {
             busy = true
             pendingRestart = Task {
-                if !(await controller.restartEngine()) { problem = "配置已保存，但" + controller.engineRestartProblem() }
+                if !(await controller.restartEngine()) { problem = L10n.tr("配置已保存，但", "Configuration saved, but ") + controller.engineRestartProblem() }
                 busy = false
                 pendingRestart = nil
             }
@@ -261,12 +289,17 @@ final class PlatformSettings: ObservableObject {
     }
 
     private func rebuild() {
-        let capabilityNames = [("conversations.list", "会话列表"), ("messages.read", "消息读取"),
-                               ("composer.read", "输入框读取"), ("composer.apply", "填入草稿"),
-                               ("overlay.inline", "行内建议"), ("events.subscribe", "实时事件")]
+        let capabilityNames = [("conversations.list", L10n.tr("会话列表", "Chat list")), ("messages.read", L10n.tr("消息读取", "Read messages")),
+                               ("composer.read", L10n.tr("输入框读取", "Read input")), ("composer.apply", L10n.tr("填入草稿", "Apply drafts")),
+                               ("overlay.inline", L10n.tr("行内建议", "Inline suggestions")), ("events.subscribe", L10n.tr("实时事件", "Live events"))]
         entries = registry.registrations.map { registration in
             let capabilities = registration.manifest?.capabilities ?? [:]
-            let (status, tone) = Self.status(of: registration, check: checks[registration.id],
+            let check = checks[registration.id].map { result in
+                (ok: result.ok, message: result.count.map { count in
+                    L10n.tr("连接正常，读到 \(count) 个会话", "Connected; read \(count) chats")
+                } ?? result.message)
+            }
+            let (status, tone) = Self.status(of: registration, check: check,
                                              checking: checkingID == registration.id)
             return PlatformEntry(id: registration.id, name: registration.name,
                                  version: registration.manifest?.version ?? "",
@@ -278,16 +311,17 @@ final class PlatformSettings: ObservableObject {
                                  removable: true)
         }
         if !entries.contains(where: { $0.id == selectedID }) { selectedID = entries.first?.id }
+        if !entries.contains(where: { $0.id == expandedToolID }) { expandedToolID = nil }
     }
 
     private static func status(of registration: PlatformRegistration, check: (ok: Bool, message: String)?,
                                checking: Bool) -> (String, StatusTone) {
         if let error = registration.error { return (error, .warn) }
-        if checking { return ("正在检测连接…", .neutral) }
+        if checking { return (L10n.tr("正在检测连接…", "Checking connection…"), .neutral) }
         if let check, !check.ok { return (check.message, .warn) }
-        if registration.enabled { return (check.map { "已启用 · \($0.message)" } ?? "已启用", .ok) }
-        if let check { return ("\(check.message)，打开开关即可启用", .neutral) }
-        return ("未启用 · 完成准备后打开开关", .neutral)
+        if registration.enabled { return (check.map { L10n.tr("已启用 · \($0.message)", "Enabled · \($0.message)") } ?? L10n.tr("已启用", "Enabled"), .ok) }
+        if let check { return (L10n.tr("\(check.message)，打开开关即可启用", "\(check.message). Turn on to enable"), .neutral) }
+        return (L10n.tr("未启用 · 完成准备后打开开关", "Disabled · Complete setup, then turn on"), .neutral)
     }
 }
 
@@ -328,7 +362,7 @@ struct PluginPackage {
         if folders.count == 1, fileManager.fileExists(atPath: folders[0].appendingPathComponent("manifest.json").path) {
             return folders[0]
         }
-        throw PlatformError.invalid("没有找到 manifest.json，请选择插件文件夹或它的 .zip 压缩包")
+        throw PlatformError.invalid(L10n.tr("没有找到 manifest.json，请选择插件文件夹或它的 .zip 压缩包", "No manifest.json found. Choose the plugin folder or its .zip archive"))
     }
 
     private static func unzip(_ archive: URL, into folder: URL) throws {
@@ -339,6 +373,6 @@ struct PluginPackage {
         process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw PlatformError.invalid("压缩包无法解开") }
+        guard process.terminationStatus == 0 else { throw PlatformError.invalid(L10n.tr("压缩包无法解开", "Could not extract the archive")) }
     }
 }

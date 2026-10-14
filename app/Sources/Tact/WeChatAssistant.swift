@@ -5,7 +5,7 @@ import CoreGraphics
 struct WeChatAssistant: ScreenReader {
     static let platformID = "wechat"
 
-    let name = "微信"
+    var name: String { L10n.tr("微信", "WeChat") }
     /// WeChat's own input font.
     let ghostFontSize: CGFloat = 14
 
@@ -66,11 +66,13 @@ struct WeChatAssistant: ScreenReader {
     static func summary(_ reading: WeChatScreen.Reading) -> String {
         let clip = { (text: String) in text.count > 24 ? String(text.prefix(24)) + "…" : text }
         let blocks = reading.rawLines
-        var lines = ["「\(reading.title.isEmpty ? "没读到名字" : reading.title)」",
-                     "聊天区 OCR 原文（末尾 \(min(3, blocks.count)) / 共 \(blocks.count) 段）"]
+        let title = reading.title.isEmpty ? L10n.tr("没读到名字", "Name not detected") : reading.title
+        let draft = reading.draft.isEmpty ? L10n.tr("空", "Empty") : clip(reading.draft)
+        var lines = [L10n.tr("「\(title)」", "“\(title)”"),
+                     L10n.tr("聊天区 OCR 原文（末尾 \(min(3, blocks.count)) / 共 \(blocks.count) 段）", "Raw chat OCR (last \(min(3, blocks.count)) of \(blocks.count) blocks)")]
         lines += blocks.suffix(3).map { clip($0.text) }
-        lines.append("输入框：\(reading.draft.isEmpty ? "空" : clip(reading.draft))")
-        lines.append("测试模式未调用 AI")
+        lines.append(L10n.tr("输入框：\(draft)", "Input: \(draft)"))
+        lines.append(L10n.tr("测试模式未调用 AI", "Test mode did not call AI"))
         return lines.joined(separator: "\n")
     }
 }

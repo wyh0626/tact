@@ -122,7 +122,7 @@ struct TelegramScreenTests {
         let resolve = try #require(reader.resolvePayload(id: "r1", platformID: "custom-tg", look: look))
         #expect(resolve["op"] as? String == "resolve" && resolve["ocr_lines"] != nil)
         #expect(reader.hasContent(look))
-        #expect(reader.summary(look).contains("顶部栏：Ann Lee"))
+        #expect(reader.summary(look).contains(L10n.tr("顶部栏：Ann Lee", "Header: Ann Lee")))
         #expect(WeChatAssistant().resolvePayload(id: "r1", platformID: "wechat", look: ScreenLook(
             title: "", draft: "", input: .zero, typing: .zero, anchor: .zero, hint: nil, composer: FakeTelegram.panel,
             context: WeChatScreen.Reading(title: "", isGroup: false, draft: "", rawLines: []))) == nil)

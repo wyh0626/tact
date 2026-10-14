@@ -143,8 +143,9 @@ struct TelegramScreen: ScreenReader {
 
     func summary(_ look: ScreenLook<Context>) -> String {
         let clip = { (text: String) in text.count > 24 ? String(text.prefix(24)) + "…" : text }
-        return ["顶部栏：" + look.context.header.map { clip($0.text) }.joined(separator: " / "),
-                "输入框：\(look.draft.isEmpty ? "空" : clip(look.draft))",
-                "测试模式未调用 AI"].joined(separator: "\n")
+        let draft = look.draft.isEmpty ? L10n.tr("空", "Empty") : clip(look.draft)
+        return [L10n.tr("顶部栏：", "Header: ") + look.context.header.map { clip($0.text) }.joined(separator: " / "),
+                L10n.tr("输入框：\(draft)", "Input: \(draft)"),
+                L10n.tr("测试模式未调用 AI", "Test mode did not call AI")].joined(separator: "\n")
     }
 }

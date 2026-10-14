@@ -59,14 +59,14 @@ enum TerminalRunner {
         print -r -- \(shellQuoted("$ " + command))
         \(command)
         print
-        print -r -- '做完后回到 Tact，点「检测并启用」。'
+        print -r -- \(shellQuoted(L10n.tr("做完后回到 Tact，点「检测并启用」。", "When finished, return to Tact and click Check and enable.")))
 
         """
     }
 
     static func run(_ command: String) throws {
         guard let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else {
-            throw PlatformError.invalid("找不到「终端」应用")
+            throw PlatformError.invalid(L10n.tr("找不到「终端」应用", "Could not find the Terminal app"))
         }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Tact-setup", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -80,7 +80,7 @@ enum TerminalRunner {
 /// What a developer needs to build a plugin, in one message the user can
 /// forward. Users never have to read it themselves.
 enum PluginBrief {
-    static let text = """
+    static var text: String { L10n.tr("""
     想请你帮忙把一个聊天工具接入 Tact
 
     Tact 是 macOS 上的开源菜单栏应用：在聊天窗口按快捷键，它读取当前会话最近的消息，用我自己选的模型起草回复，以灰字显示在输入框里；接受后只填入草稿，由我自己发送。没有服务器，一切在本机运行。
@@ -114,7 +114,41 @@ enum PluginBrief {
     }
 
     完整规范见 Tact 项目的 docs/ADAPTER.md，可以直接复制 plugins/template/ 起步。
-    """
+    """, """
+    Please help me connect a chat tool to Tact
+
+    Tact is an open-source macOS menu bar app. Press its shortcut in a chat window to read recent messages from the current conversation and draft a reply with a model I choose. The suggestion appears as gray text in the input. Accepting it only fills a draft; I send it myself. Tact has no server and runs on my Mac; model requests go to my selected provider.
+
+    Integration uses a plugin: a folder containing manifest.json and an implementation script. I can import that folder or its .zip into Tact.
+
+    The plugin needs to:
+    1. Read the chat list and recent messages as my own account, using an official API, SDK, or CLI. An API that can only send bot messages is insufficient.
+    2. Implement command-v1: `chats` outputs the chat list; `history <chat_id> <limit>` outputs recent messages. stdout must contain one JSON object only. Unsupported commands exit with code 3.
+    3. Explain installation and sign-in in the manifest setup section. Put Terminal commands in setup.commands so I can run them from Tact.
+    4. Exclude real accounts, chat history, and secrets from the package. Set unimplemented capabilities to false.
+
+    chats example: {"chats":[{"id":"chat-1","title":"Test chat","type":"private"}]}
+    history example: {"messages":[{"id":"m-1","sender":"Other person","from_me":false,"time":"2026-01-01T00:00:00Z","text":"Hello"}]}
+
+    manifest.json example:
+    {
+      "protocol_version": 1, "id": "example.my-im", "name": "My IM", "version": "1.0.0",
+      "transport": "command-v1", "entrypoint": ["/usr/bin/python3", "${plugin_dir}/adapter.py"],
+      "capabilities": {"conversations.list": true, "messages.read": true, "composer.read": true, "composer.apply": true, "overlay.inline": true, "events.subscribe": false},
+      "desktop": {
+        "strategy": "ax-ocr-v1", "bundle_ids": ["com.example.myim"],
+        "header": {"top_offset": 28, "height": 64, "left_padding": 0},
+        "overlay": {"font_size": 13, "offset_x": 0, "offset_y": 0}, "send_shortcut": "return"
+      },
+      "setup": {
+        "summary": "Install the My IM CLI and sign in first.",
+        "requirements": ["My IM desktop client installed and signed in"],
+        "commands": [{"title": "Sign in", "command": "myim login ${input}", "input_placeholder": "Your account email"}]
+      }
+    }
+
+    See docs/ADAPTER.md in the Tact project for the full specification. Copy plugins/template/ to get started.
+    """) }
 }
 
 @MainActor
@@ -135,7 +169,7 @@ final class AddChatToolModel: ObservableObject, Identifiable {
     func copyBrief() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(PluginBrief.text, forType: .string)
-        note = "已复制，发给这个 IM 的开发者或公司的技术同事"
+        note = L10n.tr("已复制，发给这个 IM 的开发者或公司的技术同事", "Copied. Send it to the chat app developer or your technical team")
     }
 
     func openDeveloperKit() {
@@ -164,9 +198,9 @@ struct AddChatToolSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Eyebrow(text: "添加聊天工具")
+                Eyebrow(text: L10n.tr("添加聊天工具", "Add chat tool"))
                 Spacer()
-                Button("关闭") { dismiss() }.buttonStyle(QuietButtonStyle()).disabled(settings.busy)
+                Button(L10n.tr("关闭", "Close")) { dismiss() }.buttonStyle(QuietButtonStyle()).disabled(settings.busy)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 14)
@@ -175,7 +209,7 @@ struct AddChatToolSheet: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         dropZone
-                        Text("导入只检查文件，不会运行插件；打开开关时才会先检测连接。")
+                        Text(L10n.tr("导入只检查文件，不会运行插件；打开开关时才会先检测连接。", "Import only checks files. The plugin runs for a connection check when you enable it."))
                             .font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.horizontal, 4)
                     }
                     if let problem = settings.problem {
@@ -184,15 +218,15 @@ struct AddChatToolSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !settings.entries.isEmpty {
-                        section("已添加") {
+                        section(L10n.tr("已添加", "Added")) {
                             ForEach(settings.entries) { entry in
-                                tile(name: entry.name, detail: entry.version.isEmpty ? "插件" : "v\(entry.version)", added: true)
+                                tile(name: entry.name, detail: entry.version.isEmpty ? L10n.tr("插件", "Plugin") : "v\(entry.version)", added: true)
                             }
                         }
                     }
-                    section("计划支持 · 有插件后即可导入") {
+                    section(L10n.tr("计划支持 · 有插件后即可导入", "Planned · Import when a plugin is available")) {
                         ForEach(PlatformSettings.planned) { platform in
-                            tile(name: platform.name, detail: "计划中", added: false)
+                            tile(name: platform.name, detail: L10n.tr("计划中", "Planned"), added: false)
                         }
                     }
                     developerBrief
@@ -211,12 +245,12 @@ struct AddChatToolSheet: View {
         VStack(spacing: 10) {
             if settings.busy {
                 ProgressView().controlSize(.small)
-                Text("正在导入…").font(.system(size: 12.5)).foregroundStyle(.secondary)
+                Text(L10n.tr("正在导入…", "Importing…")).font(.system(size: 12.5)).foregroundStyle(.secondary)
             } else {
                 Image(systemName: "shippingbox").font(.system(size: 22)).foregroundStyle(targeted ? Theme.accent : Color.secondary)
-                Text("把插件拖到这里").font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.ink)
-                Text("IM 的开发者或服务商给你的文件夹，或它的 .zip").font(.system(size: 12)).foregroundStyle(.secondary)
-                Button("选择插件…") { choosing = true }.buttonStyle(SecondaryButtonStyle()).padding(.top, 2)
+                Text(L10n.tr("把插件拖到这里", "Drop a plugin here")).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.ink)
+                Text(L10n.tr("IM 的开发者或服务商给你的文件夹，或它的 .zip", "A folder or .zip from your chat app developer or provider")).font(.system(size: 12)).foregroundStyle(.secondary)
+                Button(L10n.tr("选择插件…", "Choose plugin…")) { choosing = true }.buttonStyle(SecondaryButtonStyle()).padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 150)
@@ -235,17 +269,17 @@ struct AddChatToolSheet: View {
 
     private var developerBrief: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Eyebrow(text: "还没有插件").padding(.horizontal, 4)
+            Eyebrow(text: L10n.tr("还没有插件", "No plugin yet")).padding(.horizontal, 4)
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("请 IM 的开发者做一个").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-                    Text(model.note ?? "插件是一个带 manifest.json 的小文件夹。复制开发说明发给对方，他们照着模板就能写。")
+                    Text(L10n.tr("请 IM 的开发者做一个", "Ask the chat app developer to build one")).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+                    Text(model.note ?? L10n.tr("插件是一个带 manifest.json 的小文件夹。复制开发说明发给对方，他们照着模板就能写。", "A plugin is a small folder containing manifest.json. Copy the developer brief and send it to them to get started with the template."))
                         .font(.system(size: 11.5)).foregroundStyle(model.note == nil ? Color.secondary : Theme.ok)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Button("打开模板") { model.openDeveloperKit() }.buttonStyle(QuietButtonStyle())
-                Button("复制开发说明") { model.copyBrief() }.buttonStyle(SecondaryButtonStyle())
+                Button(L10n.tr("打开模板", "Open template")) { model.openDeveloperKit() }.buttonStyle(QuietButtonStyle())
+                Button(L10n.tr("复制开发说明", "Copy developer brief")) { model.copyBrief() }.buttonStyle(SecondaryButtonStyle())
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).fill(Theme.surface))
@@ -331,7 +365,7 @@ struct PluginPreparation: View {
                     }
                 }
             } else if setup?.summary?.isEmpty ?? true, requirements.isEmpty {
-                Text("先打开并登录这个聊天工具。插件需要额外组件或授权时，按提供方的说明完成。")
+                Text(L10n.tr("先打开并登录这个聊天工具。插件需要额外组件或授权时，按提供方的说明完成。", "Open this chat app and sign in first. Follow the provider instructions for any extra components or permissions."))
                     .font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if let problem {
@@ -339,7 +373,7 @@ struct PluginPreparation: View {
             }
             if let url = setup?.safeHelpURL {
                 Link(destination: url) {
-                    Label("提供方的安装帮助", systemImage: "arrow.up.right").font(.system(size: 12))
+                    Label(L10n.tr("提供方的安装帮助", "Provider setup help"), systemImage: "arrow.up.right").font(.system(size: 12))
                 }
             }
         }
@@ -372,13 +406,13 @@ private struct PluginSetupCommandView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(command.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.ink)
                     Spacer(minLength: 8)
-                    Button(copied ? "已复制" : "复制") {
+                    Button(copied ? L10n.tr("已复制", "Copied") : L10n.tr("复制", "Copy")) {
                         guard let resolved else { return }
                         NSPasteboard.general.clearContents()
                         copied = NSPasteboard.general.setString(resolved, forType: .string)
                     }
                     .buttonStyle(QuietButtonStyle()).disabled(resolved == nil)
-                    Button("在终端中运行") {
+                    Button(L10n.tr("在终端中运行", "Run in Terminal")) {
                         guard let resolved else { return }
                         do { try TerminalRunner.run(resolved); problem = nil } catch { problem = error.localizedDescription }
                     }
@@ -388,11 +422,11 @@ private struct PluginSetupCommandView: View {
                     Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if command.requiresInput {
-                    TextField(command.inputPlaceholder ?? "填写所需信息", text: $input)
+                    TextField(command.inputPlaceholder ?? L10n.tr("填写所需信息", "Enter the required information"), text: $input)
                         .textFieldStyle(.roundedBorder).frame(maxWidth: 280)
                         .onChange(of: input) { _, _ in copied = false }
                 }
-                Text(resolved ?? command.command.replacingOccurrences(of: "${input}", with: "‹\(command.inputPlaceholder ?? "填写")›"))
+                Text(resolved ?? command.command.replacingOccurrences(of: "${input}", with: "‹\(command.inputPlaceholder ?? L10n.tr("填写", "Enter value"))›"))
                     .font(Theme.mono(11, weight: .regular)).foregroundStyle(resolved == nil ? Color.secondary : Theme.ink)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)

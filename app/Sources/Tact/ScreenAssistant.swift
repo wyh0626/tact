@@ -63,7 +63,7 @@ enum ScreenError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAChat(let app): return "没认出\(app)的聊天界面：先打开一个聊天"
+        case .notAChat(let app): return L10n.tr("没认出\(app)的聊天界面：先打开一个聊天", "Could not recognize the \(app) chat interface. Open a chat first")
         }
     }
 }
@@ -195,14 +195,15 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
                 let raw = try? await callEngine(payload, EngineCall())
                 guard isCurrent(id) else { return }
                 let r = EngineResponse(raw ?? [:])
-                summary += "\n" + (r.ok ? "认成：\(r.chatTitle ?? "?")" : "没认出：\(raw == nil ? "连不上引擎" : r.friendlyError)")
+                let problem = raw == nil ? L10n.tr("连不上引擎", "Cannot connect to the engine") : r.friendlyError
+                summary += "\n" + (r.ok ? L10n.tr("认成：\(r.chatTitle ?? "?")", "Identified: \(r.chatTitle ?? "?")") : L10n.tr("没认出：\(problem)", "Not identified: \(problem)"))
             }
             state = .idle
             overlay.showToast(summary, input: view.inputFrame, duration: 8)
             return
         }
         guard reader.hasContent(view.look) else {
-            fail("这个聊天里没读到消息", near: view.inputFrame)
+            fail(L10n.tr("这个聊天里没读到消息", "No messages could be read in this chat"), near: view.inputFrame)
             return
         }
         overlay.showWorking(caret: view.anchorFrame, input: view.inputFrame, fontSize: Self.fontSize)
@@ -225,7 +226,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         call = nil
         let r = EngineResponse(raw)
         guard raw["platform_id"] as? String == platformID else {
-            fail("引擎还不认识\(reader.name)，请退出并重新打开 Tact", near: view.inputFrame)
+            fail(L10n.tr("引擎还不认识\(reader.name)，请退出并重新打开 Tact", "The engine does not recognize \(reader.name) yet. Quit and reopen Tact"), near: view.inputFrame)
             return
         }
         guard r.ok else {
@@ -235,7 +236,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let chatID = r.chatID ?? view.look.title
         guard let text = r.suggestion, !text.isEmpty else {
             state = .idle
-            overlay.showToast("这次不建议", input: view.inputFrame, duration: 1.5)
+            overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: view.inputFrame, duration: 1.5)
             return
         }
         await AX.waitForStillWindow(pid: view.pid, from: view.window)
@@ -243,7 +244,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         guard let now = await current(view), isCurrent(id) else {
             guard isCurrent(id) else { return }
             state = .idle
-            overlay.showToast("会话或输入框变了，建议作废", input: view.inputFrame, duration: 1.5)
+            overlay.showToast(L10n.tr("会话或输入框变了，建议作废", "The chat or input changed. Suggestion discarded"), input: view.inputFrame, duration: 1.5)
             feedback(id, "voided", chatID: chatID, detail: "changed_before_display")
             return
         }
@@ -252,7 +253,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         if !asGhost {
             let copyOnly = r.mode == "rewrite" && now.look.draftClipped
             overlay.showBubble(text, notes: r.notes, input: now.inputFrame, fontSize: Self.fontSize, rewrite: r.mode == "rewrite",
-                               footer: copyOnly ? "草稿可能没读全  ·  TAB 复制  ·  ESC 取消" : nil)
+                               footer: copyOnly ? L10n.tr("草稿可能没读全  ·  TAB 复制  ·  ESC 取消", "Draft may be incomplete  ·  TAB Copy  ·  ESC Cancel") : nil)
         }
         state = .shown(shown)
         overlay.follow(pid: now.pid, frame: now.window) { [weak self] in
@@ -430,14 +431,14 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
 
     private func finishAccept(_ shown: Shown) async {
         guard let view = await current(shown.view) else {
-            overlay.showToast("会话或输入框变了，没有写入", input: shown.view.inputFrame, duration: 2, kind: .warning)
+            overlay.showToast(L10n.tr("会话或输入框变了，没有写入", "The chat or input changed. Nothing was inserted"), input: shown.view.inputFrame, duration: 2, kind: .warning)
             feedback(shown.requestID, "voided", chatID: shown.chatID, detail: "input_changed_on_accept")
             return
         }
         overlay.hide()
         if shown.mode == "rewrite" && view.look.draftClipped {
             Inserter.stage(shown.text, on: NSPasteboard.general)
-            overlay.showToast("草稿超出了输入框能看到的范围，Tact 可能没读全，所以没有替换。建议已复制，确认后自己粘贴",
+            overlay.showToast(L10n.tr("草稿超出了输入框能看到的范围，Tact 可能没读全，所以没有替换。建议已复制，确认后自己粘贴", "The draft extends beyond the visible input area, so Tact may not have read it all and left it unchanged. The suggestion was copied. Review it before pasting"),
                               input: view.inputFrame, duration: 4)
             feedback(shown.requestID, "accepted", chatID: shown.chatID, mode: shown.mode,
                      suggestionLen: shown.text.count, latency: ms(since: shown.shownAt), detail: "clipboard")
@@ -457,7 +458,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
                      suggestionLen: shown.text.count, latency: ms(since: shown.shownAt), detail: attempt.rawValue)
         case .mismatch, .notApplied:
             let onClipboard = outcome == .notApplied(leftOnClipboard: true)
-            overlay.showToast(onClipboard ? "没看到建议进入输入框，它在剪贴板里，可以 ⌘V 粘贴" : "没能写入输入框",
+            overlay.showToast(onClipboard ? L10n.tr("没看到建议进入输入框，它在剪贴板里，可以 ⌘V 粘贴", "The suggestion was not detected in the input. It is on the clipboard; press ⌘V to paste") : L10n.tr("没能写入输入框", "Could not insert into the input"),
                               input: view.inputFrame, duration: 3, kind: .warning)
             feedback(shown.requestID, "voided", chatID: shown.chatID, detail: "insert_failed")
         }

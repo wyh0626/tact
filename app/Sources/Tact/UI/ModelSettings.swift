@@ -104,18 +104,18 @@ final class ModelSettings: ObservableObject {
             return SpeedOptions(levels: [], fastTier: nil)
         case .deepseek:
             return SpeedOptions(levels: [
-                .init(effort: "none", label: "关闭思考", detail: "最快：直接回答，不做深度思考"),
-                .init(effort: "low", label: "低", detail: SpeedOptions.detail(for: "low")),
-                .init(effort: "high", label: "高", detail: SpeedOptions.detail(for: "high")),
-                .init(effort: "max", label: "最高", detail: SpeedOptions.detail(for: "max")),
+                .init(effort: "none", label: L10n.tr("关闭思考", "Off"), detail: L10n.tr("最快：直接回答，不做深度思考", "Fastest: answers directly without deep reasoning.")),
+                .init(effort: "low", label: L10n.tr("低", "Low"), detail: SpeedOptions.detail(for: "low")),
+                .init(effort: "high", label: L10n.tr("高", "High"), detail: SpeedOptions.detail(for: "high")),
+                .init(effort: "max", label: L10n.tr("最高", "Max"), detail: SpeedOptions.detail(for: "max")),
             ], fastTier: nil)
         case .openai:
             return SpeedOptions(levels: [
-                .init(effort: "", label: "默认", detail: "用模型自己的默认推理程度"),
-                .init(effort: "low", label: "低", detail: SpeedOptions.detail(for: "low")),
-                .init(effort: "medium", label: "中", detail: SpeedOptions.detail(for: "medium")),
-                .init(effort: "high", label: "高", detail: SpeedOptions.detail(for: "high")),
-            ], fastTier: .init(id: "priority", detail: "更快出结果，按更高的价格计费"))
+                .init(effort: "", label: L10n.tr("默认", "Default"), detail: L10n.tr("用模型自己的默认推理程度", "Uses the model’s default reasoning level.")),
+                .init(effort: "low", label: L10n.tr("低", "Low"), detail: SpeedOptions.detail(for: "low")),
+                .init(effort: "medium", label: L10n.tr("中", "Medium"), detail: SpeedOptions.detail(for: "medium")),
+                .init(effort: "high", label: L10n.tr("高", "High"), detail: SpeedOptions.detail(for: "high")),
+            ], fastTier: .init(id: "priority", detail: L10n.tr("更快出结果，按更高的价格计费", "Faster results at a higher price.")))
         case .chatgpt:
             guard let selected = chatgptModels.first(where: { $0.slug == model }) else {
                 return SpeedOptions(levels: [], fastTier: nil)
@@ -131,7 +131,7 @@ final class ModelSettings: ObservableObject {
             let levels = useful.map { effort in
                 let detail = SpeedOptions.detail(for: effort)
                 return SpeedOptions.Level(effort: effort, label: SpeedOptions.label(for: effort),
-                                          detail: effort == selected.defaultReasoning ? "模型默认。" + detail : detail)
+                                          detail: effort == selected.defaultReasoning ? L10n.tr("模型默认。", "Model default. ") + detail : detail)
             }
             let preferred = useful.contains(selected.defaultReasoning ?? "") ? selected.defaultReasoning
                 : useful.contains("low") ? "low" : useful.first
@@ -165,19 +165,19 @@ final class ModelSettings: ObservableObject {
 
     var validationError: String? {
         if provider == .local {
-            guard let chosen = localModel else { return "选一个本机模型" }
-            if !localStore.isReady(chosen) { return "先下载 \(chosen.name)" }
+            guard let chosen = localModel else { return L10n.tr("选一个本机模型", "Choose a local model") }
+            if !localStore.isReady(chosen) { return L10n.tr("先下载 \(chosen.name)", "Download \(chosen.name) first") }
             return nil
         }
         if provider.usesSignIn {
-            guard let status = chatgpt, status.signedIn else { return "先用 ChatGPT 账号登录" }
-            if !status.planUsage { return "登录时没有授权使用 ChatGPT 套餐，退出后重新登录并允许" }
-            if model.isEmpty { return "选一个模型" }
+            guard let status = chatgpt, status.signedIn else { return L10n.tr("先用 ChatGPT 账号登录", "Sign in with ChatGPT first") }
+            if !status.planUsage { return L10n.tr("登录时没有授权使用 ChatGPT 套餐，退出后重新登录并允许", "ChatGPT plan usage was not authorized. Sign out, sign in again, and allow plan access.") }
+            if model.isEmpty { return L10n.tr("选一个模型", "Choose a model") }
             return nil
         }
-        if ConfigFile.origin(of: baseURL) == nil { return "接口地址要以 http:// 或 https:// 开头" }
-        if model.trimmingCharacters(in: .whitespaces).isEmpty { return "填写模型名" }
-        if keyRequired && apiKey.isEmpty && !hasStoredKey { return "填写 API Key" }
+        if ConfigFile.origin(of: baseURL) == nil { return L10n.tr("接口地址要以 http:// 或 https:// 开头", "The endpoint URL must start with http:// or https://") }
+        if model.trimmingCharacters(in: .whitespaces).isEmpty { return L10n.tr("填写模型名", "Enter a model name") }
+        if keyRequired && apiKey.isEmpty && !hasStoredKey { return L10n.tr("填写 API Key", "Enter an API key") }
         return nil
     }
 
@@ -239,7 +239,7 @@ final class ModelSettings: ObservableObject {
         do {
             try writeSpeedOnly(to: AppConfig.configPath)
         } catch {
-            chatgptMessage = "保存失败：\(error.localizedDescription)"
+            chatgptMessage = L10n.tr("保存失败：\(error.localizedDescription)", "Could not save: \(error.localizedDescription)")
             return false
         }
         controller.apply(AppConfig.load().0)
@@ -285,7 +285,7 @@ final class ModelSettings: ObservableObject {
 
     func refreshChatGPT(controller: Controller) async {
         guard let r = await controller.engineRequest(["op": "chatgpt_status"], timeout: 5) else {
-            chatgptMessage = "连不上引擎"
+            chatgptMessage = L10n.tr("连不上引擎", "Cannot connect to the engine")
             return
         }
         guard (r["ok"] as? Bool) == true, let raw = r["chatgpt"] as? [String: Any] else {
@@ -316,7 +316,7 @@ final class ModelSettings: ObservableObject {
         chatgptMessage = nil
         guard let r = await controller.engineRequest(["op": "chatgpt_login"], timeout: 10),
               (r["ok"] as? Bool) == true, let link = r["auth_url"] as? String, let url = URL(string: link) else {
-            chatgptMessage = "没能开始登录，检查引擎是否在运行"
+            chatgptMessage = L10n.tr("没能开始登录，检查引擎是否在运行", "Could not start sign-in. Check that the engine is running.")
             return
         }
         NSWorkspace.shared.open(url)
@@ -355,7 +355,7 @@ final class ModelSettings: ObservableObject {
             write(into: &file)
             try file.write(to: AppConfig.configPath)
         } catch {
-            testState = .failed("保存配置失败：\(error.localizedDescription)")
+            testState = .failed(L10n.tr("保存配置失败：\(error.localizedDescription)", "Could not save configuration: \(error.localizedDescription)"))
             return
         }
         storeKey()
@@ -466,24 +466,24 @@ struct SpeedOptions {
 
     static func label(for effort: String) -> String {
         switch effort {
-        case "none": return "关闭"
-        case "minimal": return "最快"
-        case "low": return "低"
-        case "medium": return "中"
-        case "high": return "高"
-        case "xhigh": return "超高"
-        case "max": return "最高"
+        case "none": return L10n.tr("关闭", "Off")
+        case "minimal": return L10n.tr("最快", "Fastest")
+        case "low": return L10n.tr("低", "Low")
+        case "medium": return L10n.tr("中", "Medium")
+        case "high": return L10n.tr("高", "High")
+        case "xhigh": return L10n.tr("超高", "Extra high")
+        case "max": return L10n.tr("最高", "Max")
         default: return effort
         }
     }
 
     static func detail(for effort: String) -> String {
         switch effort {
-        case "none", "minimal": return "最快：几乎不做推理"
-        case "low": return "回复快，推理较轻，适合日常聊天"
-        case "medium": return "速度和推理深度均衡"
-        case "high": return "推理更深，适合复杂问题，会慢一些"
-        case "xhigh", "max": return "推理最深，明显更慢"
+        case "none", "minimal": return L10n.tr("最快：几乎不做推理", "Fastest: minimal reasoning.")
+        case "low": return L10n.tr("回复快，推理较轻，适合日常聊天", "Fast, light reasoning for everyday chats.")
+        case "medium": return L10n.tr("速度和推理深度均衡", "Balances speed and reasoning depth.")
+        case "high": return L10n.tr("推理更深，适合复杂问题，会慢一些", "Deeper reasoning for complex questions; takes longer.")
+        case "xhigh", "max": return L10n.tr("推理最深，明显更慢", "Deepest reasoning; significantly slower.")
         default: return ""
         }
     }
@@ -493,13 +493,13 @@ struct SpeedOptions {
         var parts: [String] = []
         if let range = description.range(of: #"[0-9.]+x speed"#, options: .regularExpression) {
             let factor = description[range].replacingOccurrences(of: "x speed", with: "")
-            parts.append("约 \(factor) 倍速度")
+            parts.append(L10n.tr("约 \(factor) 倍速度", "About \(factor)× faster"))
         } else {
-            parts.append("更快出结果")
+            parts.append(L10n.tr("更快出结果", "Faster results"))
         }
         if description.localizedCaseInsensitiveContains("usage") {
-            parts.append("会更快消耗套餐额度")
+            parts.append(L10n.tr("会更快消耗套餐额度", "uses your plan allowance faster"))
         }
-        return parts.joined(separator: "，")
+        return parts.joined(separator: L10n.tr("，", ", "))
     }
 }

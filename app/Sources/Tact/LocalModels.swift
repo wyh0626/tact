@@ -119,8 +119,8 @@ final class LocalModelStore: NSObject, ObservableObject {
             .volumeAvailableCapacityForImportantUsage else { return nil }
         let needed = model.bytes + 512 * 1_048_576
         guard free < needed else { return nil }
-        return "磁盘空间不够：需要 \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .file))，"
-            + "还剩 \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file))"
+        return L10n.tr("磁盘空间不够：需要 \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .file))，", "Not enough disk space: \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)) needed, ")
+            + L10n.tr("还剩 \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file))", "\(ByteCountFormatter.string(fromByteCount: free, countStyle: .file)) available")
     }
 
     func download(_ model: LocalModel) {
@@ -133,7 +133,7 @@ final class LocalModelStore: NSObject, ObservableObject {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         } catch {
-            states[model.id] = .failed("建不了模型文件夹：\(error.localizedDescription)")
+            states[model.id] = .failed(L10n.tr("建不了模型文件夹：\(error.localizedDescription)", "Could not create the model folder: \(error.localizedDescription)"))
             return
         }
         let resumeFile = resumeURL(for: model.file)
@@ -194,8 +194,8 @@ final class LocalModelStore: NSObject, ObservableObject {
         switch result {
         case .success: states[model.id] = .ready
         case .failure(let error as CocoaError) where error.code == .fileReadCorruptFile:
-            states[model.id] = .failed("文件校验没通过，可能下载时损坏了，请重新下载")
-        case .failure(let error): states[model.id] = .failed("放不进模型文件夹：\(error.localizedDescription)")
+            states[model.id] = .failed(L10n.tr("文件校验没通过，可能下载时损坏了，请重新下载", "File verification failed. The download may be corrupted; download it again."))
+        case .failure(let error): states[model.id] = .failed(L10n.tr("放不进模型文件夹：\(error.localizedDescription)", "Could not move the file to the model folder: \(error.localizedDescription)"))
         }
     }
 
@@ -220,13 +220,13 @@ final class LocalModelStore: NSObject, ObservableObject {
         if case .downloading(let fraction) = state(of: model) { done = fraction } else { done = 0 }
         if let resume {
             try? resume.write(to: resumeURL(for: model.file), options: .atomic)
-            states[model.id] = .failed("下载中断了，点继续接着下：\(error.localizedDescription)")
+            states[model.id] = .failed(L10n.tr("下载中断了，点继续接着下：\(error.localizedDescription)", "Download interrupted. Click Resume to continue: \(error.localizedDescription)"))
         } else if done == 0, (sourceIndex[model.id] ?? 0) + 1 < sources(for: model).count {
             // Nothing arrived from this source: try the next one.
             sourceIndex[model.id, default: 0] += 1
             download(model)
         } else {
-            states[model.id] = .failed("下载失败：\(error.localizedDescription)")
+            states[model.id] = .failed(L10n.tr("下载失败：\(error.localizedDescription)", "Download failed: \(error.localizedDescription)"))
         }
     }
 }
@@ -263,7 +263,7 @@ extension LocalModelStore: URLSessionDownloadDelegate {
                 self.states[id] = .absent
                 self.download(model)
             } else {
-                self.states[id] = .failed("下载失败：服务器返回 \(status)")
+                self.states[id] = .failed(L10n.tr("下载失败：服务器返回 \(status)", "Download failed: server returned \(status)"))
             }
         }
     }

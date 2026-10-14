@@ -29,7 +29,7 @@ struct PlatformManifest: Codable {
 
     static func load(at path: String) throws -> PlatformManifest {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        guard data.count <= 256 * 1024 else { throw PlatformError.invalid("插件清单过大") }
+        guard data.count <= 256 * 1024 else { throw PlatformError.invalid(L10n.tr("插件清单过大", "The plugin manifest is too large")) }
         let manifest = try JSONDecoder().decode(Self.self, from: data)
         try manifest.validate()
         return manifest
@@ -37,19 +37,19 @@ struct PlatformManifest: Codable {
 
     func validate() throws {
         guard protocolVersion == 1, transport == "command-v1" else {
-            throw PlatformError.invalid("不支持这个插件协议版本或传输方式")
+            throw PlatformError.invalid(L10n.tr("不支持这个插件协议版本或传输方式", "Unsupported plugin protocol version or transport"))
         }
         guard Self.validID(id), !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !entrypoint.isEmpty,
               entrypoint.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               !entrypoint.contains(where: { $0.contains("\0") }) else {
-            throw PlatformError.invalid("插件身份、版本或启动命令不完整")
+            throw PlatformError.invalid(L10n.tr("插件身份、版本或启动命令不完整", "The plugin identity, version, or startup command is incomplete"))
         }
         guard capabilities["conversations.list"] == true, capabilities["messages.read"] == true else {
-            throw PlatformError.invalid("此版本要求插件实现会话列表和消息读取")
+            throw PlatformError.invalid(L10n.tr("此版本要求插件实现会话列表和消息读取", "This version requires plugins to list chats and read messages"))
         }
-        guard capabilities["events.subscribe"] != true else { throw PlatformError.invalid("command-v1 暂不支持实时事件订阅") }
-        if let limits, limits.timeoutMS <= 0 || limits.chatsCacheSeconds < 0 { throw PlatformError.invalid("插件超时和缓存参数不正确") }
+        guard capabilities["events.subscribe"] != true else { throw PlatformError.invalid(L10n.tr("command-v1 暂不支持实时事件订阅", "command-v1 does not support live event subscriptions yet")) }
+        if let limits, limits.timeoutMS <= 0 || limits.chatsCacheSeconds < 0 { throw PlatformError.invalid(L10n.tr("插件超时和缓存参数不正确", "Invalid plugin timeout or cache settings")) }
         try desktop.validate()
     }
 
@@ -86,7 +86,7 @@ struct PlatformDesktop: Codable, Equatable {
 
     func validate() throws {
         if strategy == Self.screenStrategy, !bundleIDs.allSatisfy(Self.screenReadable.contains) {
-            throw PlatformError.invalid("Tact 还不会读这个应用的界面，不能用截图方式接入")
+            throw PlatformError.invalid(L10n.tr("Tact 还不会读这个应用的界面，不能用截图方式接入", "Tact cannot read this app interface yet, so screen capture integration is unavailable"))
         }
         guard [Self.accessibilityStrategy, Self.screenStrategy].contains(strategy), !bundleIDs.isEmpty,
               bundleIDs.allSatisfy({ !$0.isEmpty && $0.rangeOfCharacter(from: .whitespacesAndNewlines) == nil }),
@@ -95,7 +95,7 @@ struct PlatformDesktop: Codable, Equatable {
               header.leftPadding.isFinite, overlay.fontSize.isFinite, overlay.fontSize > 0,
               overlay.offsetX.isFinite, overlay.offsetY.isFinite,
               ["return", "command+return", "control+return"].contains(sendShortcut) else {
-            throw PlatformError.invalid("不支持或不完整的桌面适配规则")
+            throw PlatformError.invalid(L10n.tr("不支持或不完整的桌面适配规则", "Unsupported or incomplete desktop integration settings"))
         }
     }
 
@@ -150,7 +150,7 @@ struct PlatformRegistry {
         }
         guard let instances = raw as? [[String: Any]] else {
             registrations = [.init(id: "invalid", configuration: [:], manifest: nil, desktop: nil,
-                                   error: "platforms 必须是插件实例数组")]
+                                   error: L10n.tr("platforms 必须是插件实例数组", "platforms must be an array of plugin instances"))]
             return
         }
         let counts = Dictionary(grouping: instances.compactMap { $0["id"] as? String }, by: { $0 }).mapValues(\.count)
@@ -160,7 +160,7 @@ struct PlatformRegistry {
             do {
                 guard PlatformManifest.validID(id), counts[id] == 1,
                       raw["enabled"] is Bool, let path = raw["manifest"] as? String, !path.isEmpty else {
-                    throw PlatformError.invalid("插件实例 ID 重复或配置不完整")
+                    throw PlatformError.invalid(L10n.tr("插件实例 ID 重复或配置不完整", "Duplicate plugin instance ID or incomplete configuration"))
                 }
                 let expanded = AppConfig.expand(path)
                 let absolute = expanded.hasPrefix("/") ? expanded : base.appendingPathComponent(expanded).path
@@ -169,7 +169,7 @@ struct PlatformRegistry {
                 let manifest = try PlatformManifest.load(at: absolute)
                 var desktop = manifest.desktop
                 if raw["desktop"] != nil && !(raw["desktop"] is [String: Any]) {
-                    throw PlatformError.invalid("桌面覆盖规则必须是对象")
+                    throw PlatformError.invalid(L10n.tr("桌面覆盖规则必须是对象", "Desktop overrides must be an object"))
                 }
                 if let overrides = raw["desktop"] as? [String: Any] {
                     let original = try JSONSerialization.jsonObject(with: JSONEncoder().encode(desktop)) as? [String: Any] ?? [:]
@@ -179,7 +179,7 @@ struct PlatformRegistry {
                 }
                 if let command = raw["command"] {
                     guard let argv = command as? [String], !argv.isEmpty, !argv[0].isEmpty, !argv.contains(where: { $0.contains("\0") }) else {
-                        throw PlatformError.invalid("兼容启动命令格式不正确")
+                        throw PlatformError.invalid(L10n.tr("兼容启动命令格式不正确", "Invalid legacy startup command format"))
                     }
                 }
                 return .init(id: id, configuration: configuration, manifest: manifest, desktop: desktop, error: nil)

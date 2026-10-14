@@ -246,26 +246,26 @@ struct QuickPanelView: View {
             }
             .buttonStyle(QuietButtonStyle())
             .keyboardShortcut(",", modifiers: .command)
-            .help("设置")
-            .accessibilityLabel("设置")
+            .help(L10n.tr("设置", "Settings"))
+            .accessibilityLabel(L10n.tr("设置", "Settings"))
         }
     }
 
     private var statusLine: some View {
         let missing = Permission.allCases.first { settings.permissions[$0] == false }
         let (tone, text): (StatusTone, String) = {
-            if !settings.statusChecked { return (.neutral, "正在检查…") }
-            if !settings.engineConnected { return (.warn, "引擎没有连接") }
-            if let missing { return (.warn, "还没有\(missing.title)权限") }
+            if !settings.statusChecked { return (.neutral, L10n.tr("正在检查…", "Checking…")) }
+            if !settings.engineConnected { return (.warn, L10n.tr("引擎没有连接", "Engine disconnected")) }
+            if let missing { return (.warn, L10n.tr("还没有\(missing.title)权限", "\(missing.title) access is missing")) }
             if let problem = status.problem { return (.warn, problem) }
-            return (.ok, "正在待命 · \(status.hotkey) 生成建议")
+            return (.ok, L10n.tr("正在待命 · \(status.hotkey) 生成建议", "Ready · \(status.hotkey) to suggest"))
         }()
         return HStack(spacing: 8) {
             StatusDot(tone: tone, text: text, lineLimit: 2)
                 .contentTransition(.opacity)
             Spacer(minLength: 8)
             if let missing, settings.statusChecked {
-                Button("去授权") {
+                Button(L10n.tr("去授权", "Grant access")) {
                     missing.request()
                     missing.openSystemSettings()
                 }
@@ -281,17 +281,17 @@ struct QuickPanelView: View {
     private var showsWeChat: Bool { settings.wechat || Self.weChatInstalled }
 
     private var weChatState: (StatusTone, String) {
-        if !settings.wechat { return (.neutral, "未启用") }
-        if settings.permissions[.screenRecording] == false { return (.warn, "需要屏幕录制权限") }
-        return (.ok, "已启用 · 截图识别")
+        if !settings.wechat { return (.neutral, L10n.tr("未启用", "Disabled")) }
+        if settings.permissions[.screenRecording] == false { return (.warn, L10n.tr("需要屏幕录制权限", "Needs Screen Recording access")) }
+        return (.ok, L10n.tr("已启用 · 截图识别", "Enabled · screen recognition"))
     }
 
     private var chatTools: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Eyebrow(text: "聊天工具").padding(.horizontal, 4)
+            Eyebrow(text: L10n.tr("聊天工具", "Chat tools")).padding(.horizontal, 4)
             Card {
                 if showsWeChat {
-                    QuickToolRow(name: "微信", tone: weChatState.0, status: weChatState.1, enabled: settings.wechat,
+                    QuickToolRow(name: L10n.tr("微信", "WeChat"), tone: weChatState.0, status: weChatState.1, enabled: settings.wechat,
                                  checking: false, toggleDisabled: false,
                                  open: { actions.openSettings(.chat) },
                                  setEnabled: { on in withAnimation(Motion.quick) { settings.setWeChat(on) } })
@@ -301,7 +301,7 @@ struct QuickPanelView: View {
                     Button { actions.openSettings(.chat) } label: {
                         HStack(spacing: 10) {
                             IconTile(symbol: "plus", size: 24)
-                            Text("添加聊天工具").font(.system(size: 13)).foregroundStyle(Theme.ink)
+                            Text(L10n.tr("添加聊天工具", "Add a chat app")).font(.system(size: 13)).foregroundStyle(Theme.ink)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.right").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
                         }
@@ -325,7 +325,7 @@ struct QuickPanelView: View {
     private var model: some View {
         let options = speed.speedOptions
         return VStack(alignment: .leading, spacing: 6) {
-            Eyebrow(text: "模型").padding(.horizontal, 4)
+            Eyebrow(text: L10n.tr("模型", "Model")).padding(.horizontal, 4)
             Card {
                 Button { actions.openSettings(.model) } label: {
                     HStack(spacing: 10) {
@@ -343,24 +343,26 @@ struct QuickPanelView: View {
                 .buttonStyle(RowButtonStyle())
                 if !options.levels.isEmpty {
                     RowDivider(inset: 12)
-                    HStack(spacing: 8) {
-                        Text("推理").font(.system(size: 12.5)).foregroundStyle(Theme.ink)
-                        Spacer(minLength: 8)
-                        Picker("推理", selection: Binding(get: { speed.reasoningEffort },
-                                                         set: { speed.reasoningEffort = $0; saveSpeed() })) {
-                            ForEach(options.levels, id: \.self) { Text($0.label).tag($0.effort) }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            Text(L10n.tr("推理", "Reasoning")).font(.system(size: 12.5)).foregroundStyle(Theme.ink)
+                                .fixedSize()
+                            Spacer(minLength: 8)
+                            reasoningPicker
                         }
-                        .labelsHidden().pickerStyle(.segmented).controlSize(.small)
-                        .fixedSize()
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L10n.tr("推理", "Reasoning")).font(.system(size: 12.5)).foregroundStyle(Theme.ink)
+                            reasoningPicker.frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
                 if options.fastTier != nil {
                     RowDivider(inset: 12)
                     HStack(spacing: 8) {
-                        Text("快速模式").font(.system(size: 12.5)).foregroundStyle(Theme.ink)
+                        Text(L10n.tr("快速模式", "Fast mode")).font(.system(size: 12.5)).foregroundStyle(Theme.ink)
                         Spacer(minLength: 8)
-                        Toggle("快速模式", isOn: Binding(get: { speed.fastMode }, set: { speed.fastMode = $0; saveSpeed() }))
+                        Toggle(L10n.tr("快速模式", "Fast mode"), isOn: Binding(get: { speed.fastMode }, set: { speed.fastMode = $0; saveSpeed() }))
                             .labelsHidden().toggleStyle(.switch).controlSize(.small)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -368,7 +370,7 @@ struct QuickPanelView: View {
             }
             .disabled(savingSpeed)
             if savingSpeed {
-                Text("正在应用…").font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.horizontal, 4)
+                Text(L10n.tr("正在应用…", "Applying…")).font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.horizontal, 4)
             } else if let speedProblem {
                 Text(speedProblem).font(.system(size: 11.5)).foregroundStyle(Theme.warn).padding(.horizontal, 4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -376,18 +378,27 @@ struct QuickPanelView: View {
         }
     }
 
+    private var reasoningPicker: some View {
+        Picker(L10n.tr("推理", "Reasoning"), selection: Binding(get: { speed.reasoningEffort },
+                                                         set: { speed.reasoningEffort = $0; saveSpeed() })) {
+            ForEach(speed.speedOptions.levels, id: \.self) { Text($0.label).tag($0.effort) }
+        }
+        .labelsHidden().pickerStyle(.segmented).controlSize(.small)
+        .fixedSize()
+    }
+
     private var footer: some View {
         HStack(spacing: 2) {
-            Button("使用引导", action: actions.openOnboarding).buttonStyle(QuietButtonStyle())
-            Button("统计") { actions.openSettings(.stats) }.buttonStyle(QuietButtonStyle())
+            Button(L10n.tr("使用引导", "Setup guide"), action: actions.openOnboarding).buttonStyle(QuietButtonStyle())
+            Button(L10n.tr("统计", "Stats")) { actions.openSettings(.stats) }.buttonStyle(QuietButtonStyle())
             Spacer()
-            Button("退出", action: actions.quit).buttonStyle(QuietButtonStyle())
+            Button(L10n.tr("退出", "Quit"), action: actions.quit).buttonStyle(QuietButtonStyle())
         }
         .padding(.horizontal, -2)
     }
 
     private var method: String {
-        if speed.provider.usesSignIn { return "ChatGPT 账号" }
+        if speed.provider.usesSignIn { return L10n.tr("ChatGPT 账号", "ChatGPT account") }
         if speed.usesOpenAI { return "API Key" }
         return speed.provider.detail
     }
@@ -447,7 +458,7 @@ private struct QuickToolRow: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             if checking { ProgressView().controlSize(.small).transition(.opacity) }
-            Toggle("启用 \(name)", isOn: Binding(get: { enabled }, set: setEnabled))
+            Toggle(L10n.tr("启用 \(name)", "Enable \(name)"), isOn: Binding(get: { enabled }, set: setEnabled))
                 .labelsHidden().toggleStyle(.switch).controlSize(.small)
                 .disabled(toggleDisabled)
         }

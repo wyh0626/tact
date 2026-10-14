@@ -60,7 +60,7 @@ struct LocalModelTests {
                 Issue.record("expected a failed download")
                 return
             }
-            #expect(reason.contains("校验"))
+            #expect(reason.contains(L10n.tr("校验", "verification")))
             #expect(!FileManager.default.fileExists(atPath: store.url(for: model).path))
             let leftovers = try FileManager.default.contentsOfDirectory(atPath: models.path)
             #expect(leftovers.isEmpty, "nothing half-downloaded stays behind: \(leftovers)")
@@ -89,7 +89,7 @@ struct LocalModelTests {
         let store = LocalModelStore(directory: FileManager.default.temporaryDirectory)
         let huge = LocalModel(id: "huge", name: "Huge", repository: "r", file: "h.gguf", bytes: Int64.max / 4,
                               sha256: "", minimumMemoryGB: 1, recommendedMemoryGB: 1, thinks: false)
-        #expect(store.spaceProblem(for: huge)?.contains("磁盘空间不够") == true)
+        #expect(store.spaceProblem(for: huge)?.contains(L10n.tr("磁盘空间不够", "Not enough disk space")) == true)
         store.download(huge)
         guard case .failed = store.state(of: huge) else {
             Issue.record("a download that cannot fit must not start")
@@ -108,7 +108,7 @@ struct LocalModelTests {
         settings.choose(.local)
         let thinker = LocalModel.catalog[0]
         settings.useLocalModel(thinker)
-        #expect(settings.validationError == "先下载 \(thinker.name)")
+        #expect(settings.validationError == L10n.tr("先下载 \(thinker.name)", "Download \(thinker.name) first"))
         try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
         let handle = try FileHandle(forWritingTo: { let u = store.url(for: thinker); FileManager.default.createFile(atPath: u.path, contents: nil); return u }())
         try handle.truncate(atOffset: UInt64(thinker.bytes))
@@ -122,7 +122,7 @@ struct LocalModelTests {
         #expect(file.string("model.local.path") == store.url(for: thinker).path)
         #expect(file.value("model.extra_body.chat_template_kwargs.enable_thinking") as? Bool == false)
         #expect(file.value("model.extra_body.thinking") == nil)
-        #expect(settings.summary == "本机 · Qwen3 1.7B")
+        #expect(settings.summary == L10n.tr("本机 · Qwen3 1.7B", "Local · Qwen3 1.7B"))
         // Reading the config back finds the same model.
         #expect(ModelSettings(file: file, localStore: store).localModelID == thinker.id)
         #expect(ModelSettings(file: file, localStore: store).provider == .local)

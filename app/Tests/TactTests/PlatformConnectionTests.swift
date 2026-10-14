@@ -15,7 +15,7 @@ struct PlatformConnectionTests {
         let controller = fixture.controller(socket: server.path)
         let result = await controller.checkPlatformConnection(id: "company-chat")
         #expect(!result.ok && result.count == nil)
-        #expect(result.message.contains("引擎版本过旧") && result.message.contains("重启"))
+        #expect(result.message.contains(L10n.tr("引擎版本过旧", "The engine is too old")) && result.message.contains(L10n.tr("重启", "restart")))
         let requests = await server.finished.value
         #expect(requests.map(\.op) == ["platforms"])
     }
@@ -29,7 +29,7 @@ struct PlatformConnectionTests {
             ["ok": true, "platform_id": "company-chat", "count": count]])
         let result = await fixture.controller(socket: server.path).checkPlatformConnection(id: "company-chat")
         #expect(result.ok && result.count == count)
-        #expect(result.message.contains("\(count) 个会话"))
+        #expect(result.message.contains(L10n.tr("\(count) 个会话", "\(count) chats")))
         let requests = await server.finished.value
         #expect(requests.map(\.op) == ["platforms", "platform_test"])
         #expect(requests.last?.platformID == "company-chat")
@@ -42,7 +42,7 @@ struct PlatformConnectionTests {
             ["ok": true, "platform_id": "different-platform", "count": 3]])
         let result = await fixture.controller(socket: server.path).checkPlatformConnection(id: "company-chat")
         #expect(!result.ok && result.count == nil)
-        #expect(result.message.contains("所选平台不一致"))
+        #expect(result.message.contains(L10n.tr("所选平台不一致", "does not match the selection")))
         #expect(await server.finished.value.map(\.op) == ["platforms", "platform_test"])
     }
 
@@ -62,7 +62,7 @@ struct PlatformConnectionTests {
         let server = try PlatformProbeServer(responses: [["ok": true, "platforms": entries]])
         let result = await fixture.controller(socket: server.path).checkPlatformConnection(id: "company-chat")
         #expect(!result.ok && result.count == nil)
-        #expect(result.message.contains("配置尚未生效"))
+        #expect(result.message.contains(L10n.tr("配置尚未生效", "settings have not taken effect")))
         #expect(await server.finished.value.map(\.op) == ["platforms"])
     }
 

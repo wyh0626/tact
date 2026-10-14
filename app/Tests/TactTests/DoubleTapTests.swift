@@ -92,8 +92,8 @@ struct DoubleTapTests {
 
 struct TriggerSpecTests {
     @Test func parsesDoubleTap() {
-        #expect(TriggerSpec.parse("double+ctrl") == .doubleTap(.maskControl, display: "双击 ⌃"))
-        #expect(TriggerSpec.parse("Double + Command") == .doubleTap(.maskCommand, display: "双击 ⌘"))
+        #expect(TriggerSpec.parse("double+ctrl") == .doubleTap(.maskControl, display: L10n.tr("双击 ⌃", "Double-tap ⌃")))
+        #expect(TriggerSpec.parse("Double + Command") == .doubleTap(.maskCommand, display: L10n.tr("双击 ⌘", "Double-tap ⌘")))
     }
 
     @Test func combosPassThrough() {
