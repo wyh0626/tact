@@ -31,7 +31,7 @@
 1. 应用截取聊天顶部栏，用 macOS 自带的 Vision 在本机识别会话名；
 2. 引擎拿识别结果和插件给的会话列表匹配，只有唯一匹配才继续；
 3. 引擎通过插件拉这个会话最近 20 条消息，连同你的意图和表达偏好一起交给模型；
-4. 建议绑定在生成时的会话和输入框上。**显示前、按 Tab 写入前各核对一次**：会话切换了或输入框内容变了，建议作废；对方发来新消息不会撤销已经生成或正在生成的建议。
+4. 建议绑定在生成时的会话和输入框上。**显示前、按 Tab 写入前各核对一次**：会话或输入框不对就不显示、不写入。
 
 ## 上手
 
@@ -80,7 +80,7 @@ open dist/Tact.app
    | 辅助功能 | 读写输入框、取光标位置、拦截 Tab 和 Esc、识别双击快捷键 |
    | 屏幕录制 | 截取聊天顶部栏，在本机认出当前会话 |
 
-2. **模型**：用 **ChatGPT 账号**登录（用 Plus / Pro 套餐额度，不需要 API Key）；或者选「本机」，在列表里下载一个模型，聊天内容不出这台 Mac；或者选 DeepSeek、OpenAI、自定义接口（比如 Ollama）并填 API Key（存进 macOS 钥匙串，不写进配置文件）。再点「测试并继续」。
+2. **模型**：用 **ChatGPT 账号**登录（用 Plus / Pro 套餐额度，不需要 API Key）；或者选「本机」，在列表里下载一个模型，聊天内容不出这台 Mac；或者选择云端服务，填写地址和 API Key（存进 macOS 钥匙串），点模型旁的刷新按钮读取列表，下拉选择或手动填写模型 ID。自定义接口要明确选择协议。再点「测试并继续」。
 3. **试一试**：一段模拟的朋友聊天（小林约你周六吃火锅）。在这里按快捷键看灰字、按 Tab 填入，再打「拒绝」两个字按快捷键，看它改写成一句得体的婉拒，再按回车「发出去」。用的是刚配好的真实模型，连不上时用示例演示；消息只在 Tact 的窗口里，不会发出，也不记进统计。
 4. **聊天工具**：把 IM 提供的插件（文件夹或 .zip）拖进「添加聊天工具」。导入后插件停用，展开它按「准备」里的步骤安装、登录，再打开开关：Tact 先检测连接，通过才启用。
 
@@ -155,7 +155,12 @@ Telegram for macOS 不开放辅助功能，所以桌面端和微信一样靠截�
 | 生成建议 | 快捷键（只在已启用的平台客户端在前台时生效，在 `app.hotkey` 里设置，默认 `double+ctrl` 是双击 ⌃）。输入框为空时建议显示成光标后的灰字；写了几个字时按意图改写，显示成气泡 |
 | 接受 | `Tab`：写入输入框，光标移到末尾 |
 | 取消 | `Esc`：这条建议作废 |
-| 其他任何按键或点击 | 浮层消失，按键照常交给当前聊天工具 |
+| 其他按键 | 建议作废，按键照常交给当前聊天工具 |
+| 点击 | 建议保留；点到别的会话时先收起，回到原会话自动出现 |
+
+生成超过 3 秒时，光标旁的等待动画后面会显示已用秒数；限流时提示会说明大约多少秒后可以再试。
+
+生成时可以放心切走。切到别的应用或别的会话，生成不会停；生成完或者已经显示的建议会先存在内存里，菜单栏图标右下角显示空心圈表示正在生成，实心点表示建议已准备好。回到原来的会话、输入框和生成时一样，建议就会自动出现。等待中的建议遇到这些情况会作废：输入框内容变了、超过 5 分钟、在任何聊天工具里又生成了一次（只保留最新的一条）。会话里来了新消息不会作废建议，需要的话自己按快捷键重新生成。显示中的建议没有时间限制，点击也不会让它消失，只有打字、按 Esc 或重新生成才会作废。你不在时生成失败，回到这个聊天工具时会提示一次原因。
 
 灰字生成后会挂在这个会话上：接受后又删光、打字后又删光、切走再切回来，只要输入框是空的，灰字就会重新出现，不用重新生成。按回车发出消息、按 Esc、重新触发，或者过了 10 分钟，这条建议才作废；对方发来新消息不会撤销建议。
 
@@ -179,16 +184,23 @@ Telegram for macOS 不开放辅助功能，所以桌面端和微信一样靠截�
 | 键 | 说明 |
 | --- | --- |
 | `platforms` | 导入的插件实例数组：`id`、manifest 绝对路径、`enabled`，可选 `command` 与 `desktop` 覆盖。新安装为 `[]`；缺省或空数组都表示没有聊天工具。当前按前台 Bundle ID 路由，同一客户端多个实例不自动区分账号。详情见 [平台规范](ADAPTER.md) |
-| `model.provider` | 空或 `openai`：任何兼容 OpenAI `/chat/completions` 的接口，用 API Key。`chatgpt`：用 ChatGPT 账号登录，走 Responses API，额度算在你的 ChatGPT 套餐上。`local`：下载到本机的模型，由应用内置的 llama-server 运行 |
+| `model.provider` | 服务商标识：`openai`、`deepseek`、`anthropic`、`gemini`、`zhipu`、`moonshot`、`qwen`、`doubao`、`siliconflow`、`openrouter`、`minimax` 或 `custom`。旧配置缺省或空值仍走 OpenAI 兼容接口。`chatgpt` 使用账号登录和套餐额度；`local` 由内置 llama-server 运行 |
+| `model.protocol` | API Key 连接的请求协议：`openai`（Chat Completions）、`responses`（OpenAI Responses）、`anthropic`（Claude Messages）、`gemini`。缺省兼容旧配置：Claude / Gemini 使用原生协议，其余使用 Chat Completions |
 | `model.local.path` | `local` 时模型文件（.gguf）的位置，设置里下载的模型在 `~/.tact/models/`。`model.local.context_size` 是上下文长度，默认 8192 |
-| `model.base_url` / `model.model` | 接口地址和模型名。`chatgpt` 时地址是 `https://api.openai.com/v1`，模型从登录账号可用的列表里选 |
+| `model.base_url` / `model.model` | 接口基址和模型名。Claude 默认 `https://api.anthropic.com`，Gemini 默认 `https://generativelanguage.googleapis.com`；两者不填完整的模型请求路径。自定义网关填写该协议的基址。`chatgpt` 时地址是 `https://api.openai.com/v1`，模型从登录账号可用的列表里选 |
 | `model.allowed_base_urls` | **模型端点白名单**。`base_url` 不在里面，引擎拒绝启动。换公司网关时两处都要改 |
 | `model.api_key_env` | 引擎读 API Key 的环境变量名，默认 `TACT_API_KEY`。应用会把设置里存进钥匙串的 Key 放进这个变量；在终端里单独跑引擎时自己设置它 |
+| `model.api_key_account` | 应用使用的钥匙串条目标识，不含 Key。新连接按服务商、协议和地址来源隔离；旧配置继续使用原条目，普通保存不迁移或删除旧 Key |
+| `model.headers` | 高级设置中的额外请求头，JSON 对象且值为字符串。API Key 使用专门字段填写，不能借此覆盖鉴权、Cookie、内容类型或连接控制头 |
 | `model.append_no_think` | 用 Qwen3 这类思考模型时设为 `true`，关掉思考以降低延迟 |
-| `model.json_mode` | 接口支持 `response_format` 时可以打开，输出更稳 |
-| `model.reasoning_effort` | 推理程度，如 `low`、`medium`、`high`；空着用模型默认。走 Responses API（ChatGPT 账号）时发 `reasoning.effort`，走 Chat Completions 时发 `reasoning_effort`。可选值因模型而异，设置 → 模型 → 速度 里只列出当前模型支持的档位。DeepSeek 选「关闭思考」时改为在 `extra_body` 里关掉思考 |
-| `model.service_tier` | 设为 `priority` 开启快速模式（Fast mode）：出结果更快；用 ChatGPT 套餐时会更快消耗额度，用 API Key 时按更高价格计费 |
-| `model.extra_body` | 原样并进每次请求的额外参数。用 DeepSeek 时设为 `{"thinking": {"type": "disabled"}}` 关掉思考：输出不会因为思考耗尽 `max_tokens` 而变空，模型耗时也从 2–3 秒降到 0.5–1 秒 |
+| `model.json_mode` | OpenAI 兼容接口支持 `response_format` 时可以打开；Gemini 映射为 JSON 响应类型。Claude 原生通道暂不支持通用 JSON 模式，设为 `true` 会明确报错 |
+| `model.max_tokens` | 输出上限；旧配置默认 300，新选云端连接默认 4096，可在高级设置调整。Claude 思考预算不足时请求会提高上限，为预算和最终回复留出空间；Responses 协议映射为 `max_output_tokens`；Chat Completions 服务拒绝 `max_tokens` 并要求 `max_completion_tokens` 时改用后者。ChatGPT 账号通道忽略此项 |
+| `model.timeout_ms` | 请求超时毫秒数；旧配置默认 20000，新选云端连接默认 60000，可在高级设置调整 |
+| `model.reasoning_effort` | 旧配置和 OpenAI / DeepSeek / ChatGPT 账号使用的推理程度，如 `low`、`medium`、`high`；空着用模型默认。ChatGPT 账号发 `reasoning.effort`，Chat Completions 发 `reasoning_effort`。DeepSeek 选关闭时用 `extra_body.thinking.type=disabled`。Claude / Gemini 原生通道使用下方 `model.reasoning`，不映射此旧字段 |
+| `model.reasoning` | 可选对象：`format` 选择参数格式，`effort` 选择档位；预算模式另有 `budget_tokens`，Claude 另有 `thinking_type`。缺省时保持旧配置行为；界面选「默认」时清除请求中该格式的推理覆盖值。只适用于 API Key 通道 |
+| `model.capability_cache` | 应用保存的选中模型接口能力快照，按模型、服务商、协议、完整地址、钥匙串条目和请求头指纹匹配；不含 API Key。界面标为「上次接口返回」，手动刷新会更新 |
+| `model.service_tier` | 设为 `priority` 开启快速模式（Fast mode）：出结果更快；用 ChatGPT 套餐时会更快消耗额度，用 API Key 时按更高价格计费。Claude / Gemini 原生通道不映射此字段，非空会报错 |
+| `model.extra_body` | 高级设置中的服务商专用请求参数，JSON 对象，按所选协议填写。消息、模型、流式开关等字段由适配器管理；原生协议的温度和输出上限由专门配置管理。API Key Responses 默认不发送温度，需要时可在这里显式设置 |
 | `context.history_cache_seconds` | 预取的消息在多少秒内可以直接用来生成，默认 20；设为 0 则每次都现拉 |
 | `style.file` | 表达偏好，见 `~/.tact/style.md` |
 | `style.chat_sections` | 按会话名或会话 ID 指定用 style.md 里的哪一段 |
@@ -198,6 +210,18 @@ Telegram for macOS 不开放辅助功能，所以桌面端和微信一样靠截�
 | `feedback.log_plaintext` | 默认 `false`：反馈日志只记长度、耗时、编辑距离，不记任何聊天文字 |
 
 直接改文件的话，改完重启应用。在设置窗口里改的会自动生效。
+
+API Key 的 Chat Completions 调用使用 Eino 模型组件；Claude、Gemini 和 API Key Responses 直接调用各自的 HTTP 接口。模型对可选参数的支持不按模型名判断：服务因温度、`top_p` 等采样参数或 `max_tokens` 返回 400 并点名这个参数时，引擎去掉它重发一次，并在引擎运行期间对同一地址、模型和推理设置记住；其他错误照常显示。ChatGPT 账号登录继续使用原有认证和 Responses 通道，本机模型继续使用内置 `llama-server`。已有配置无需迁移，普通保存不会自动改变旧接口协议。
+
+设置 → 模型：预设 OpenAI、DeepSeek、Claude、Gemini、智谱、Kimi、通义千问（百炼）、豆包、硅基流动、OpenRouter 和 MiniMax。预设提供常用标准 API 地址，地区网关、工作空间地址和 Coding Plan 地址可以自行修改。填好 Key 和地址后，点模型旁的刷新按钮读取列表；列表不可用时仍可直接输入模型 ID，刷新也不会覆盖手动输入的模型。
+
+模型列表接口返回的能力优先使用，明确返回“不支持”时不显示对应控件；接口缺少的字段用服务商的通用档位补充：Claude、Gemini 协议和 OpenAI、DeepSeek、通义千问预设各有一套固定的参数格式，不按模型名推断。各模型参数格式不同的服务商（智谱、Kimi、MiniMax 等）和自定义网关，只在接口返回能力时显示控件，专用参数可以在高级设置填写。模型不支持所选档位时由接口报错。界面标明能力来源。Claude 可提供思考类型和 effort 支持信息，Gemini 只说明是否支持思考。选中模型的接口能力会随连接保存，重新打开设置或快捷面板仍可使用，并标注为上次接口返回；刷新后更新。
+
+**自定义接口**明确选择 OpenAI Chat Completions、OpenAI Responses、Claude Messages 或 Gemini 协议，再填对应基址。这决定请求路径、鉴权方式和参数结构；厂商专用字段放在折叠的「高级设置」，不再要求普通用户选择 `reasoning_effort` 等参数格式。OpenAI 兼容本机网关可不填 Key；Claude / Gemini 原生协议需要 Key。
+
+**推理与速度**按当前能力显示档位或思考预算，接口说明不能关闭思考的模型不显示关闭选项。快捷面板可以切换档位，预算在完整设置修改。思考和最终回复可能共享输出上限，较深档位可在高级设置提高输出 Token 上限或请求超时。预算范围采用接口返回信息，缺少时使用应用支持的范围：Claude 1,024–32,768，Gemini 1–32,768 或 -1（动态）。
+
+普通保存保留已有推理配置和手写额外参数。修改推理控件才写入 `model.reasoning`；直接修改高级设置中的推理字段会交回手写参数控制，之后再改控件可恢复界面控制。切换服务商会清除上一连接的临时 Key、额外请求头和推理覆盖，已保存的 Key 留在原连接的钥匙串条目里；切换协议还会清除已知不兼容的原生字段。读取模型列表使用当前连接凭据，不把其他连接的旧 Key 自动发往新地址。
 
 ## 本机模型
 

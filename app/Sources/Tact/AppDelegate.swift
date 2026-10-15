@@ -44,8 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows = w
         buildStatusItem()
         Updates.shared.start()
-        updateReminder = Updates.shared.$waiting.sink { [weak self] version in
-            self?.statusItem?.button?.image = MenuBarMark.image(badged: version != nil)
+        updateReminder = Updates.shared.$waiting.combineLatest(SuggestionActivity.shared.$kind).sink { [weak self] version, activity in
+            let image = MenuBarMark.image(badged: version != nil, activity: activity)
+            self?.statusItem?.button?.image = image
+            self?.statusItem?.button?.toolTip = image.accessibilityDescription
         }
         Log.info("Tact 已启动：在聊天工具里按 \(c.hotKeyDisplay) 生成建议")
         launchedAt = Date()

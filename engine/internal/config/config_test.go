@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wyh0626/tact/engine/internal/reasoning"
 )
 
 func TestChatToolsComeOnlyFromPlatforms(t *testing.T) {
@@ -41,6 +43,29 @@ func TestChatToolsComeOnlyFromPlatforms(t *testing.T) {
 				t.Fatalf("manifest home was not expanded: %q", cfg.Platforms[0].Manifest)
 			}
 		})
+	}
+}
+
+func TestLoadStructuredReasoningRetainsRawOptions(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"model":{"provider":"anthropic","model":"claude-sonnet-4-6","reasoning":{"format":"anthropic_budget","effort":"enabled","budget_tokens":2048},"extra_body":{"metadata":{"user_id":"local-test"},"output_config":{"format":{"type":"json_schema"}}}}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Model.Reasoning; got == nil || got.Format != "anthropic_budget" || got.Effort != "enabled" || got.BudgetTokens != 2048 {
+		t.Fatalf("reasoning = %#v", got)
+	}
+	if _, ok := cfg.Model.ExtraBody["output_config"]; !ok {
+		t.Fatal("load lost raw structured-output options")
+	}
+	cfg.Model.Reasoning = &reasoning.Config{Format: "gemini_level", Effort: "high"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "format") {
+		t.Fatalf("Validate incompatible reasoning = %v", err)
 	}
 }
 
@@ -122,17 +147,104 @@ func TestLoadRejectsUnlistedModel(t *testing.T) {
 }
 
 func TestValidateProvider(t *testing.T) {
-	cfg := Default()
-	cfg.Adapter.Command = []string{"x"}
-	for _, provider := range []string{"", "openai", "chatgpt"} {
-		cfg.Model.Provider = provider
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("provider %q: %v", provider, err)
-		}
+	t.Parallel()
+	cases := []struct {
+		name     string
+		provider string
+		wantErr  bool
+	}{
+		{name: "legacy default"},
+		{name: "OpenAI", provider: "openai"},
+		{name: "DeepSeek", provider: "deepseek"},
+		{name: "Anthropic", provider: "anthropic"},
+		{name: "Gemini", provider: "gemini"},
+		{name: "ChatGPT account", provider: "chatgpt"},
+		{name: "unknown provider", provider: "claude", wantErr: true},
 	}
-	cfg.Model.Provider = "claude"
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "model.provider") {
-		t.Fatalf("want a provider error, got %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			cfg.Model.Provider = tc.provider
+			err := cfg.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "model.provider") {
+					t.Fatalf("Validate() = %v, want a provider error", err)
+				}
+			} else if err != nil {
+				t.Fatalf("Validate() = %v, want no error", err)
+			}
+		})
+	}
+}
+
+func TestNativeProvidersRequireAllowedEndpoint(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		provider string
+		baseURL  string
+	}{
+		{name: "Anthropic", provider: "anthropic", baseURL: "https://api.anthropic.com"},
+		{name: "Gemini", provider: "gemini", baseURL: "https://generativelanguage.googleapis.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			cfg.Model.Provider = tc.provider
+			cfg.Model.BaseURL = tc.baseURL
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "model.allowed_base_urls") {
+				t.Fatalf("Validate() = %v, want an endpoint allowlist error", err)
+			}
+			cfg.Model.AllowedBaseURLs = []string{tc.baseURL}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() = %v after allowing the endpoint", err)
+			}
+		})
+	}
+}
+
+func TestNativeProviderParameterCompatibility(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		provider  string
+		configure func(*ModelConfig)
+		wantErr   string
+	}{
+		{name: "Anthropic valid", provider: "anthropic"},
+		{name: "Anthropic JSON mode", provider: "anthropic", configure: func(m *ModelConfig) { m.JSONMode = true }, wantErr: "model.json_mode"},
+		{name: "Anthropic missing output limit", provider: "anthropic", configure: func(m *ModelConfig) { m.MaxTokens = 0 }, wantErr: "model.max_tokens"},
+		{name: "Anthropic negative output limit", provider: "anthropic", configure: func(m *ModelConfig) { m.MaxTokens = -1 }, wantErr: "model.max_tokens"},
+		{name: "Anthropic unsupported effort", provider: "anthropic", configure: func(m *ModelConfig) { m.ReasoningEffort = "high" }, wantErr: "model.reasoning_effort"},
+		{name: "Anthropic unsupported tier", provider: "anthropic", configure: func(m *ModelConfig) { m.ServiceTier = "priority" }, wantErr: "model.service_tier"},
+		{name: "Gemini JSON mode", provider: "gemini", configure: func(m *ModelConfig) { m.JSONMode = true }},
+		{name: "Gemini default output limit", provider: "gemini", configure: func(m *ModelConfig) { m.MaxTokens = 0 }},
+		{name: "Gemini unsupported effort", provider: "gemini", configure: func(m *ModelConfig) { m.ReasoningEffort = "high" }, wantErr: "model.reasoning_effort"},
+		{name: "Gemini unsupported tier", provider: "gemini", configure: func(m *ModelConfig) { m.ServiceTier = "priority" }, wantErr: "model.service_tier"},
+		{name: "native extra body", provider: "anthropic", configure: func(m *ModelConfig) { m.ExtraBody = map[string]any{"thinking": map[string]any{"type": "disabled"}} }},
+		{name: "legacy settings preserved", provider: "", configure: func(m *ModelConfig) {
+			m.JSONMode, m.MaxTokens, m.ReasoningEffort, m.ServiceTier = true, 0, "high", "priority"
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			cfg.Model.Provider = tc.provider
+			if tc.configure != nil {
+				tc.configure(&cfg.Model)
+			}
+			err := cfg.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want no error", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate() = %v, want error containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 

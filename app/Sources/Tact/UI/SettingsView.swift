@@ -368,12 +368,20 @@ struct ModelForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 12 : 18) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(ModelProvider.cards) { card in
-                    ProviderCard(provider: card, selected: settings.provider.cardID == card.id, compact: compact,
-                                 detail: card == .openai ? openAICardDetail : nil) {
-                        withAnimation(Motion.spring) { settings.chooseCard(card) }
+            Card {
+                SettingRow(title: L10n.tr("模型服务", "Model provider"), detail: providerDetail, divider: false) {
+                    Picker(L10n.tr("模型服务", "Model provider"), selection: Binding(
+                        get: { settings.provider.cardID },
+                        set: { id in
+                            if let provider = ModelProvider.cards.first(where: { $0.id == id }) {
+                                withAnimation(Motion.spring) { settings.chooseCard(provider) }
+                            }
+                        })) {
+                        ForEach(ModelProvider.cards) { provider in
+                            Label(provider.name, systemImage: provider.symbol).tag(provider.id)
+                        }
                     }
+                    .labelsHidden().frame(width: 260)
                 }
             }
 
@@ -382,10 +390,14 @@ struct ModelForm: View {
             } else if settings.provider == .local {
                 LocalModelsCard(settings: settings, controller: controller, compact: compact)
             } else {
-                KeyFields(settings: settings, compact: compact)
+                KeyFields(settings: settings, controller: controller, compact: compact)
             }
 
             SpeedCard(settings: settings)
+
+            if !settings.provider.usesSignIn && settings.provider != .local {
+                AdvancedModelCard(settings: settings)
+            }
 
             if showsSaveButton {
                 HStack(spacing: 12) {
@@ -404,6 +416,8 @@ struct ModelForm: View {
         .animation(Motion.spring, value: settings.chatgptModels)
         .task { await settings.refreshChatGPT(controller: controller) }
         .onChange(of: settings.model) { _, _ in settings.reconcileSpeed() }
+        .onChange(of: settings.apiProtocol) { _, _ in settings.reconcileSpeed() }
+        .onChange(of: settings.reasoningFormat) { _, _ in settings.reconcileSpeed() }
         .onChange(of: settings.chatgptModels) { _, _ in settings.reconcileSpeed() }
     }
 
@@ -413,6 +427,10 @@ struct ModelForm: View {
         }
         return ModelProvider.openai.detail
     }
+
+    private var providerDetail: String {
+        settings.usesOpenAI ? openAICardDetail : settings.provider.detail
+    }
 }
 
 /// Reasoning effort and Fast mode, as far as the provider and model offer them.
@@ -421,15 +439,26 @@ private struct SpeedCard: View {
 
     var body: some View {
         let options = settings.speedOptions
-        if !options.isEmpty {
-            Card(title: L10n.tr("速度", "Speed")) {
+        if !options.isEmpty || (!settings.provider.usesSignIn && settings.provider != .local) {
+            Card(title: L10n.tr("推理与速度", "Reasoning and speed")) {
                 if !options.levels.isEmpty {
-                    SettingRow(title: L10n.tr("推理程度", "Reasoning"), detail: levelDetail(options), divider: options.fastTier != nil) {
-                        Picker("", selection: $settings.reasoningEffort) {
-                            ForEach(options.levels, id: \.self) { Text($0.label).tag($0.effort) }
+                    SettingRow(title: L10n.tr("推理程度", "Reasoning"), detail: levelDetail(options),
+                               divider: showsBudget || options.fastTier != nil) {
+                        if options.levels.count <= 4 {
+                            effortPicker(options).pickerStyle(.segmented)
+                                .frame(width: CGFloat(options.levels.count) * 70)
+                        } else {
+                            effortPicker(options).frame(width: 210)
                         }
-                        .labelsHidden().pickerStyle(.segmented)
-                        .frame(width: CGFloat(min(options.levels.count, 6)) * 70)
+                    }
+                }
+                if showsBudget, let capability = settings.reasoningCapability {
+                    SettingRow(title: L10n.tr("思考预算", "Thinking budget"),
+                               detail: budgetDetail(capability),
+                               divider: options.fastTier != nil) {
+                        TextField(L10n.tr("Token 数", "Tokens"), value: $settings.thinkingBudget,
+                                  format: .number.grouping(.never))
+                            .multilineTextAlignment(.trailing).frame(width: 120)
                     }
                 }
                 if let tier = options.fastTier {
@@ -437,11 +466,49 @@ private struct SpeedCard: View {
                         Toggle("", isOn: $settings.fastMode).labelsHidden().toggleStyle(.switch)
                     }
                 }
+                if options.isEmpty {
+                    Text(settings.reasoningDetail)
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).padding(16)
+                }
+                if let problem = settings.reasoningValidationError {
+                    Text(problem).font(.system(size: 11.5)).foregroundStyle(Theme.warn)
+                        .fixedSize(horizontal: false, vertical: true).padding(16)
+                }
             }
         }
     }
 
+    private var showsBudget: Bool { settings.usesThinkingBudget && settings.reasoningEffort == "enabled" }
+
+    private func budgetDetail(_ capability: ReasoningCapability) -> String {
+        guard let range = capability.budgetRange else {
+            if capability.format == "anthropic_budget" {
+                return L10n.tr("至少 1024 tokens；接口未返回预算上限", "At least 1024 tokens; the API did not report a budget limit")
+            }
+            return capability.allowsDynamicBudget
+                ? L10n.tr("大于 0 tokens，或 -1 动态分配；接口未返回上限", "Positive tokens, or -1 for a dynamic budget; no API limit reported")
+                : L10n.tr("大于 0 tokens；接口未返回预算上限", "Positive tokens; the API did not report a budget limit")
+        }
+        let bounds = "\(range.lowerBound)…\(range.upperBound) tokens"
+        return capability.allowsDynamicBudget
+            ? L10n.tr("\(bounds)，或填 -1 由模型动态分配", "\(bounds), or -1 for a dynamic budget")
+            : capability.format == "anthropic_budget"
+                ? L10n.tr("\(bounds)；Claude 输出上限不足时会自动提高", "\(bounds); Claude’s output limit is raised when needed")
+                : bounds
+    }
+
+    private func effortPicker(_ options: SpeedOptions) -> some View {
+        Picker(L10n.tr("推理程度", "Reasoning"), selection: $settings.reasoningEffort) {
+            ForEach(options.levels, id: \.self) { Text($0.label).tag($0.effort) }
+        }
+        .labelsHidden()
+    }
+
     private func levelDetail(_ options: SpeedOptions) -> String {
+        if !settings.provider.usesSignIn && !settings.reasoningCapabilitySource.isEmpty {
+            return settings.reasoningCapabilitySource + " · " + settings.reasoningDetail
+        }
         let chosen = options.levels.first { $0.effort == settings.reasoningEffort }?.detail ?? ""
         return chosen.isEmpty ? L10n.tr("越低越快；聊天回复一般用低就够了", "Lower is faster. Low is usually enough for chat replies.") : chosen
     }
@@ -470,34 +537,136 @@ private struct OpenAIMethodRow: View {
 
 private struct KeyFields: View {
     @ObservedObject var settings: ModelSettings
+    let controller: Controller
     let compact: Bool
 
     var body: some View {
-        Card {
+        VStack(alignment: .leading, spacing: 8) {
+          Card {
             if settings.usesOpenAI { OpenAIMethodRow(settings: settings, compact: compact) }
-            SettingRow(title: L10n.tr("接口地址", "Endpoint"), detail: compact ? nil : L10n.tr("兼容 OpenAI 的 /v1 地址", "An OpenAI-compatible /v1 URL")) {
-                TextField("https://…/v1", text: $settings.baseURL).frame(width: 260)
-            }
-            SettingRow(title: L10n.tr("模型", "Model"), detail: compact ? nil : L10n.tr("填服务商给的模型名", "Use the model name from your provider")) {
-                TextField(settings.provider.defaultModel.isEmpty ? L10n.tr("模型名", "Model name") : settings.provider.defaultModel,
-                          text: $settings.model).frame(width: 260)
-            }
-            SettingRow(title: "API Key", detail: keyDetail, divider: false) {
-                HStack(spacing: 8) {
-                    SecureField(settings.hasStoredKey ? L10n.tr("已保存，留空不变", "Saved; leave blank to keep") : "sk-…", text: $settings.apiKey)
-                        .frame(width: settings.hasStoredKey ? 190 : 260)
-                    if settings.hasStoredKey {
-                        Button(L10n.tr("移除", "Remove")) { settings.forgetKey() }.buttonStyle(SecondaryButtonStyle())
+            if settings.provider == .custom {
+                SettingRow(title: L10n.tr("接口协议", "API protocol"),
+                           detail: compact ? nil : L10n.tr("选择这个地址实际使用的请求协议", "Choose the request protocol accepted by this endpoint")) {
+                    Picker(L10n.tr("接口协议", "API protocol"), selection: $settings.apiProtocol) {
+                        ForEach(ModelProtocol.allCases, id: \.self) { value in
+                            Text(value.name).tag(value)
+                        }
                     }
+                    .labelsHidden().frame(width: 260)
                 }
-                .disabled(settings.provider.key == .none)
             }
+            SettingRow(title: L10n.tr("接口地址", "Endpoint"), detail: compact ? nil : settings.apiProtocol.endpointDetail) {
+                TextField("https://…", text: $settings.baseURL).frame(width: 260)
+            }
+            SettingRow(title: "API Key", detail: keyDetail) {
+                SecureField(settings.hasStoredKey ? "••••••••••••••••" : "sk-…", text: $settings.apiKey)
+                    .frame(width: 260)
+                    .help(settings.hasStoredKey ? L10n.tr("已保存。输入新的 Key 会覆盖它，右键可移除", "Saved. Typing a new key replaces it; right-click to remove it") : "")
+                    .contextMenu {
+                        if settings.hasStoredKey {
+                            Button(L10n.tr("移除已保存的 Key", "Remove Saved Key")) { settings.forgetKey() }
+                        }
+                    }
+                    .disabled(settings.provider.key == .none)
+            }
+            SettingRow(title: L10n.tr("模型", "Model"),
+                       detail: compact ? nil : L10n.tr("从接口列表选择，也可以直接填写模型 ID", "Choose from the endpoint’s list, or type a model ID"), divider: false) {
+                HStack(spacing: 8) {
+                    EditableModelPicker(model: $settings.model, models: settings.availableModels)
+                        .frame(width: 220, height: 24)
+                    Button { Task { await settings.loadModels(controller: controller) } } label: {
+                        if settings.isLoadingModels {
+                            ProgressView().controlSize(.small).frame(width: 16, height: 16)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(settings.isLoadingModels)
+                    .help(L10n.tr("读取模型列表和能力", "Load models and capabilities"))
+                }
+                .frame(width: 260)
+            }
+          }
+          if let problem = settings.modelLoadError {
+              Text(problem).font(.system(size: 11.5)).foregroundStyle(Theme.warn)
+                  .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+          } else if let message = settings.modelLoadMessage {
+              Text(message).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                  .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+          }
+        }
+        .task(id: settings.automaticCatalogIdentity) {
+            guard settings.automaticCatalogIdentity != nil else { return }
+            // Wait out typing in the endpoint field before asking.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await settings.loadModels(controller: controller)
         }
     }
 
     private var keyDetail: String? {
-        if settings.provider.key == .optional { return compact ? nil : L10n.tr("服务要求时才填，比如本机的 Ollama 就不用", "Only if required by the service. Local Ollama needs no key.") }
+        if !settings.keyRequired { return compact ? nil : L10n.tr("服务要求时才填，比如本机的 Ollama 就不用", "Only if required by the service. Local Ollama needs no key.") }
         return compact ? nil : L10n.tr("存进 macOS 钥匙串，不写进配置文件", "Stored in macOS Keychain, outside the config file.")
+    }
+}
+
+struct AdvancedModelCard: View {
+    @ObservedObject var settings: ModelSettings
+    @State private var expanded = false
+
+    init(settings: ModelSettings, expanded: Bool = false) {
+        self.settings = settings
+        _expanded = State(initialValue: expanded)
+    }
+
+    var body: some View {
+        Card {
+            DisclosureGroup(isExpanded: $expanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Text(L10n.tr("输出 Token 上限", "Output token limit")).font(.system(size: 12))
+                        Spacer(minLength: 8)
+                        TextField("4096", value: $settings.maxTokens, format: .number.grouping(.never))
+                            .multilineTextAlignment(.trailing).frame(width: 110)
+                    }
+                    HStack(spacing: 12) {
+                        Text(L10n.tr("请求超时（毫秒）", "Request timeout (ms)")).font(.system(size: 12))
+                        Spacer(minLength: 8)
+                        TextField("60000", value: $settings.timeoutMS, format: .number.grouping(.never))
+                            .multilineTextAlignment(.trailing).frame(width: 110)
+                    }
+                    Text(L10n.tr("服务商专用请求参数（JSON 对象）", "Provider request parameters (JSON object)"))
+                        .font(.system(size: 12, weight: .medium))
+                    jsonEditor($settings.extraBodyJSON)
+                    if settings.usesAdvancedReasoningParameters {
+                        Text(L10n.tr("将使用这里填写的推理参数；修改上方推理控件可恢复界面控制。",
+                                     "Uses the reasoning parameters entered here. Change the reasoning control above to restore its settings."))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(L10n.tr("请求头（JSON 对象，值为字符串）；API Key 在上方填写", "Request headers (JSON object with string values); enter the API key above"))
+                        .font(.system(size: 12, weight: .medium))
+                    jsonEditor($settings.headersJSON)
+                    if let problem = settings.advancedValidationError {
+                        Text(problem).font(.system(size: 11.5)).foregroundStyle(Theme.warn)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 12)
+            } label: {
+                Text(L10n.tr("高级设置", "Advanced settings")).font(.system(size: 13, weight: .medium))
+            }
+            .padding(16)
+        }
+    }
+
+    private func jsonEditor(_ value: Binding<String>) -> some View {
+        TextEditor(text: value).font(.system(size: 12, design: .monospaced))
+            .scrollContentBackground(.hidden)
+            .padding(6).frame(minHeight: 100, maxHeight: 180)
+            .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
     }
 }
 
@@ -586,47 +755,6 @@ private struct PlanWelcome: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).fill(Theme.surface))
         .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).strokeBorder(Theme.accent.opacity(0.6)))
-    }
-}
-
-private struct ProviderCard: View {
-    let provider: ModelProvider
-    let selected: Bool
-    let compact: Bool
-    var detail: String?
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                IconTile(symbol: provider.symbol, size: 30, tint: selected ? Theme.accent : nil)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(provider.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-                    Text(detail ?? provider.detail).font(.system(size: 11)).foregroundStyle(.secondary)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(selected ? Theme.accent : Theme.controlLine)
-            }
-            .padding(compact ? 10 : 12)
-            .background(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).fill(Theme.surface))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                .fill(hovering && !selected ? Theme.hover : .clear))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                    .strokeBorder(selected ? Theme.accent : hovering ? Theme.controlLine : Theme.hairline,
-                                  lineWidth: selected ? 1.5 : 1)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .onHover { hovering = $0 }
-        .animation(Motion.quick, value: hovering)
-        .animation(Motion.quick, value: selected)
     }
 }
 
@@ -799,7 +927,7 @@ private struct StatCard: View {
                 if let bar { Meter(value: bar) } else { Color.clear }
             }
             .frame(height: 6)
-            Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+            Text(detail).font(.system(size: 11.5)).monospacedDigit().foregroundStyle(.secondary).lineLimit(2)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

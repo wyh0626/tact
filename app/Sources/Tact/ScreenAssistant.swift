@@ -68,13 +68,40 @@ extension ScreenReader {
     }
 }
 
+/// What an assistant asks of the desktop: which app is in front, where its
+/// window is, and what the window shows.
+struct ScreenDesk {
+    var frontmost: @MainActor () -> pid_t?
+    /// Accessibility coordinates: global points, top-left origin.
+    var windowFrame: @MainActor (pid_t) -> CGRect?
+    var capture: @MainActor (pid_t, CGRect) async throws -> CGImage
+    /// Returns once a window being dragged or resized from the frame has stopped.
+    var waitForStillWindow: @MainActor (pid_t, CGRect) async -> Void
+
+    @MainActor
+    static func live(_ reader: HeaderReader) -> ScreenDesk {
+        ScreenDesk(frontmost: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+                   windowFrame: { AX.windowFrame(pid: $0) },
+                   capture: { try await reader.captureWindow(pid: $0, windowFrame: $1) },
+                   waitForStillWindow: { await AX.waitForStillWindow(pid: $0, from: $1) })
+    }
+}
+
 /// The keyboard side of a screen assistant, for the controller.
 @MainActor
 protocol ScreenSession: AnyObject {
     func trigger(_ app: NSRunningApplication)
     /// Returns true to swallow the event.
     func handle(type: CGEventType, event: CGEvent) -> Bool
+    /// Ends the suggestion and any work on one.
     func reset(detail: String)
+    /// The app left the front. A suggestion being made or shown is kept for
+    /// when its chat is back.
+    func leave()
+}
+
+extension ScreenSession {
+    func leave() { reset(detail: "app_deactivated") }
 }
 
 enum ScreenError: LocalizedError {
@@ -123,24 +150,51 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let chatID: String
         let text: String
         let mode: String
+        let notes: [String]
+        let shortNotes: [String]
+        let started: Date
         let shownAt: Date
 
         /// The same suggestion on the window dragged to `frame`.
-        func moved(to frame: CGRect) -> Shown {
-            Shown(requestID: requestID, view: view.moved(to: frame), chatID: chatID, text: text, mode: mode, shownAt: shownAt)
+        func moved(to frame: CGRect) -> Shown { at(view.moved(to: frame), shownAt: shownAt) }
+
+        /// The same suggestion over `view`, shown at `shownAt`.
+        func at(_ view: View, shownAt: Date = Date()) -> Shown {
+            Shown(requestID: requestID, view: view, chatID: chatID, text: text, mode: mode, notes: notes,
+                  shortNotes: shortNotes, started: started, shownAt: shownAt)
         }
+    }
+
+    /// A ready suggestion whose chat is not in front: the user moved to
+    /// another app or chat while it was made, or after it showed. It shows
+    /// again once the chat is back with the same draft.
+    private struct Waiting {
+        let shown: Shown
+        /// It was on screen before, so its "shown" was reported.
+        let reported: Bool
+        let since: Date
     }
 
     private enum State {
         case idle
         case working(String)
         case shown(Shown)
+        case waiting(Waiting)
+    }
+
+    /// What a fresh look finds where a suggestion was made.
+    private enum Presence {
+        case same(View)
+        /// Another app or chat is in front, or the window could not be read.
+        case elsewhere
+        /// The chat is in front with another draft.
+        case draftChanged
     }
 
     let reader: Reader
     let platformID: String
     private let overlay: Overlay
-    private let capture: HeaderReader
+    private let desk: ScreenDesk
     private let callEngine: ([String: Any], EngineCall) async throws -> [String: Any]
     private let sendFeedback: ([String: Any]) -> Void
     /// Read only, show what was read, and skip the model.
@@ -148,18 +202,24 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     private var state: State = .idle
     private var call: EngineCall?
     private var watchTimer: Timer?
+    private var waitTimer: Timer?
+    private var resuming = false
+    /// A failure while the user was in another app, said once they are back.
+    private var missed: (message: String, pid: pid_t, near: CGRect, since: Date)?
+    /// What will be said about a failure once the user is back, if anything.
+    var heldFailure: String? { missed?.message }
     /// A click landed on the window since the hotkey, to drag it say, and
     /// may have taken the keyboard from the input box.
     private var windowClicked = false
     private static var fontSize: CGFloat { 13 }
 
-    init(reader: Reader, platformID: String, overlay: Overlay, capture: HeaderReader,
+    init(reader: Reader, platformID: String, overlay: Overlay, desk: ScreenDesk,
          callEngine: @escaping ([String: Any], EngineCall) async throws -> [String: Any],
          sendFeedback: @escaping ([String: Any]) -> Void) {
         self.reader = reader
         self.platformID = platformID
         self.overlay = overlay
-        self.capture = capture
+        self.desk = desk
         self.callEngine = callEngine
         self.sendFeedback = sendFeedback
     }
@@ -169,7 +229,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     func trigger(_ app: NSRunningApplication) {
         reset(detail: "retriggered")
         let pid = app.processIdentifier
-        guard let window = AX.windowFrame(pid: pid) else {
+        guard let window = desk.windowFrame(pid) else {
             Log.info("\(reader.name)：拿不到窗口位置")
             NSSound.beep()
             return
@@ -185,11 +245,22 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         return false
     }
 
-    private func fail(_ message: String, near rect: CGRect) {
+    private func fail(_ id: String, _ message: String, near rect: CGRect, pid: pid_t) {
         state = .idle
         call = nil
-        overlay.showToast(message, input: rect, duration: 3, kind: .warning)
+        SuggestionActivity.shared.clear(id)
         Log.info("\(reader.name)：\(message)")
+        guard isFront(pid) else {
+            // Said over the chat tool only, once the user is back there.
+            missed = (message, pid, rect, Date())
+            startWaitTimer()
+            return
+        }
+        overlay.showToast(message, input: rect, duration: 3, kind: .warning)
+    }
+
+    private func isFront(_ pid: pid_t) -> Bool {
+        desk.frontmost() == pid
     }
 
     /// Where to say something before the input box is known.
@@ -198,12 +269,13 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     }
 
     private func run(id: String, pid: pid_t, window: CGRect, started: Date) async {
+        SuggestionActivity.shared.set(.generating, for: id)
         let view: View
         do {
             view = try await look(pid: pid, window: window)
         } catch {
             guard isCurrent(id) else { return }
-            fail((error as? LocalizedError)?.errorDescription ?? "\(error)", near: Self.bottom(of: window))
+            fail(id, (error as? LocalizedError)?.errorDescription ?? "\(error)", near: Self.bottom(of: window), pid: pid)
             return
         }
         guard isCurrent(id) else { return }
@@ -218,17 +290,20 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
                 summary += "\n" + (r.ok ? L10n.tr("认成：\(r.chatTitle ?? "?")", "Identified: \(r.chatTitle ?? "?")") : L10n.tr("没认出：\(problem)", "Not identified: \(problem)"))
             }
             state = .idle
+            SuggestionActivity.shared.clear(id)
             overlay.showToast(summary, input: view.inputFrame, duration: 8)
             return
         }
         guard reader.hasContent(view.look) else {
-            fail(L10n.tr("这个聊天里没读到消息", "No messages could be read in this chat"), near: view.inputFrame)
+            fail(id, L10n.tr("这个聊天里没读到消息", "No messages could be read in this chat"), near: view.inputFrame, pid: pid)
             return
         }
-        overlay.showWorking(caret: view.anchorFrame, input: view.inputFrame, fontSize: Self.fontSize)
-        // A resize hides the working pixels; the suggestion is placed on
-        // the window as it is once ready.
-        overlay.follow(pid: view.pid, frame: view.window)
+        if isFront(pid) {
+            overlay.showWorking(caret: view.anchorFrame, input: view.inputFrame, fontSize: Self.fontSize)
+            // A resize hides the working pixels; the suggestion is placed on
+            // the window as it is once ready.
+            overlay.follow(pid: view.pid, frame: view.window)
+        }
         let token = EngineCall()
         call = token
         let raw: [String: Any]
@@ -238,51 +313,72 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             return
         } catch {
             guard isCurrent(id) else { return }
-            fail((error as? LocalizedError)?.errorDescription ?? "\(error)", near: view.inputFrame)
+            fail(id, (error as? LocalizedError)?.errorDescription ?? "\(error)", near: view.inputFrame, pid: pid)
             return
         }
         guard isCurrent(id) else { return }
         call = nil
         let r = EngineResponse(raw)
         guard raw["platform_id"] as? String == platformID else {
-            fail(L10n.tr("引擎还不认识\(reader.name)，请退出并重新打开 Tact", "The engine does not recognize \(reader.name) yet. Quit and reopen Tact"), near: view.inputFrame)
+            fail(id, L10n.tr("引擎还不认识\(reader.name)，请退出并重新打开 Tact", "The engine does not recognize \(reader.name) yet. Quit and reopen Tact"), near: view.inputFrame, pid: pid)
             return
         }
         guard r.ok else {
-            fail(r.friendlyError, near: view.inputFrame)
+            fail(id, r.friendlyError, near: view.inputFrame, pid: pid)
             return
         }
         let chatID = r.chatID ?? view.look.title
         guard let text = r.suggestion, !text.isEmpty else {
             state = .idle
-            overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: view.inputFrame, duration: 1.5)
+            SuggestionActivity.shared.clear(id)
+            if isFront(pid) { overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: view.inputFrame, duration: 1.5) }
             return
         }
-        await AX.waitForStillWindow(pid: view.pid, from: view.window)
-        guard isCurrent(id) else { return }
-        guard let now = await current(view), isCurrent(id) else {
+        let made = Shown(requestID: id, view: view, chatID: chatID, text: text, mode: r.mode, notes: r.notes,
+                         shortNotes: r.shortNotes, started: started, shownAt: started)
+        if isFront(pid) {
+            await desk.waitForStillWindow(view.pid, view.window)
             guard isCurrent(id) else { return }
-            state = .idle
-            overlay.showToast(L10n.tr("会话或输入框变了，建议作废", "The chat or input changed. Suggestion discarded"), input: view.inputFrame, duration: 1.5)
-            feedback(id, "voided", chatID: chatID, detail: "changed_before_display")
-            return
         }
-        let shown = Shown(requestID: id, view: now, chatID: chatID, text: text, mode: r.mode, shownAt: Date())
-        let asGhost = r.mode == "complete" && showGhost(text, tags: r.shortNotes, in: now)
+        let found = await presence(view)
+        guard isCurrent(id) else { return }
+        switch found {
+        case .same(let now):
+            let asGhost = present(made.at(now))
+            feedback(id, "shown", chatID: chatID, mode: r.mode, suggestionLen: text.count,
+                     latency: ms(since: started), detail: asGhost ? "ghost" : "bubble")
+            Log.info("\(reader.name)：建议已显示，\(text.count) 字，总耗时 \(ms(since: started)) ms（引擎 \(r.timing)）")
+        case .elsewhere:
+            if isFront(pid) { overlay.hide() }
+            wait(made, reported: false)
+            Log.info("\(reader.name)：建议已生成，等回到原会话再显示")
+        case .draftChanged:
+            state = .idle
+            SuggestionActivity.shared.clear(id)
+            overlay.showToast(L10n.tr("输入框变了，建议作废", "The input changed. Suggestion discarded"), input: view.inputFrame, duration: 1.5)
+            feedback(id, "voided", chatID: chatID, detail: "changed_before_display")
+        }
+    }
+
+    /// Puts `shown` on screen; true when it went in as ghost text.
+    @discardableResult
+    private func present(_ shown: Shown) -> Bool {
+        let now = shown.view
+        let asGhost = shown.mode == "complete" && showGhost(shown.text, tags: shown.shortNotes, in: now)
         if !asGhost {
-            let copyOnly = r.mode == "rewrite" && now.look.draftClipped
-            overlay.showBubble(text, notes: r.notes, input: now.inputFrame, fontSize: Self.fontSize, rewrite: r.mode == "rewrite",
+            let copyOnly = shown.mode == "rewrite" && now.look.draftClipped
+            overlay.showBubble(shown.text, notes: shown.notes, input: now.inputFrame, fontSize: Self.fontSize, rewrite: shown.mode == "rewrite",
                                footer: copyOnly ? L10n.tr("草稿可能没读全  ·  TAB 复制  ·  ESC 取消", "Draft may be incomplete  ·  TAB Copy  ·  ESC Cancel") : nil)
         }
+        stopWaitTimer()
         state = .shown(shown)
+        SuggestionActivity.shared.clear(shown.requestID)
         overlay.follow(pid: now.pid, frame: now.window) { [weak self] in
-            guard let self, case .shown(let current) = self.state, current.requestID == id else { return }
+            guard let self, case .shown(let current) = self.state, current.requestID == shown.requestID else { return }
             self.dismiss(current, event: "voided", detail: "window_resized")
         }
         startWatch()
-        feedback(id, "shown", chatID: chatID, mode: r.mode, suggestionLen: text.count,
-                 latency: ms(since: started), detail: asGhost ? "ghost" : "bubble")
-        Log.info("\(reader.name)：建议已显示，\(text.count) 字，总耗时 \(ms(since: started)) ms（引擎 \(r.timing)）")
+        return asGhost
     }
 
     /// A reply to an empty input box shows as grey text where typing
@@ -306,7 +402,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
 
     /// Captures the window and reads the chat in it.
     private func look(pid: pid_t, window: CGRect) async throws -> View {
-        let image = try await capture.captureWindow(pid: pid, windowFrame: window)
+        let image = try await desk.capture(pid, window)
         let scale = CGFloat(image.width) / max(1, window.width)
         let reader = reader
         let screen = ScreenWindow(pid: pid, frame: window)
@@ -319,38 +415,40 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     /// window that may have been dragged or resized since. Nil when the
     /// app left the front or the chat or draft changed.
     private func current(_ view: View) async -> View? {
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == view.pid,
-              let frame = AX.windowFrame(pid: view.pid) else {
-            Log.info("\(reader.name)：窗口不在前台了")
-            return nil
-        }
+        if case .same(let now) = await presence(view) { return now }
+        return nil
+    }
+
+    private func presence(_ view: View) async -> Presence {
+        guard isFront(view.pid), let frame = desk.windowFrame(view.pid) else { return .elsewhere }
         let now: View
         let reading: (title: String, draft: String)
         if frame.size == view.window.size {
             now = view.moved(to: frame)
             guard let read = await currentTitleAndDraft(now) else {
                 Log.info("\(reader.name)：重新读画面失败")
-                return nil
+                return .elsewhere
             }
             reading = read
         } else {
             // A new size lays the window out anew: read all of it again.
             guard let fresh = try? await look(pid: view.pid, window: frame) else {
                 Log.info("\(reader.name)：窗口改了大小，重新读画面失败")
-                return nil
+                return .elsewhere
             }
             now = fresh
             reading = (fresh.look.title, fresh.look.draft)
         }
+        guard TextUtil.same(view.look.title, reading.title) else { return .elsewhere }
         if let change = TextUtil.change(from: (view.look.title, view.look.draft), to: reading) {
             Log.info("\(reader.name)：\(change)")
-            return nil
+            return .draftChanged
         }
-        return now
+        return .same(now)
     }
 
     private func currentTitleAndDraft(_ view: View) async -> (title: String, draft: String)? {
-        guard let image = try? await capture.captureWindow(pid: view.pid, windowFrame: view.window) else { return nil }
+        guard let image = try? await desk.capture(view.pid, view.window) else { return nil }
         let scale = CGFloat(image.width) / max(1, view.window.width)
         let reader = reader
         let screen = ScreenWindow(pid: view.pid, frame: view.window)
@@ -390,33 +488,152 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         return false
     }
 
-    /// A click ends the suggestion, unless it dragged the window: then the
-    /// suggestion stays, and the overlay comes back where the window stopped.
+    /// Only typing ends a suggestion. After a click it stays while its chat
+    /// and draft are on screen, following a dragged window; a click that
+    /// opened another chat sets it aside until that chat is back.
     private func settleClick(on shown: Shown) async {
         while NSEvent.pressedMouseButtons & 1 != 0 {
             try? await Task.sleep(nanoseconds: 30_000_000)
         }
+        // Let the chat app draw what the click did before looking.
+        try? await Task.sleep(nanoseconds: 200_000_000)
         guard case .shown(let current) = state, current.requestID == shown.requestID else { return }
-        guard let frame = AX.windowFrame(pid: current.view.pid), frame != current.view.window else {
-            dismiss(current, event: "dismissed", detail: "click")
-            return
+        let found = await presence(current.view)
+        guard case .shown(let latest) = state, latest.requestID == shown.requestID else { return }
+        switch found {
+        case .same(let now):
+            if now.window != latest.view.window { present(latest.at(now, shownAt: latest.shownAt)) }
+        case .elsewhere:
+            stopWatch()
+            overlay.hide()
+            wait(latest, reported: true)
+        case .draftChanged:
+            dismiss(latest, event: "dismissed", detail: "input_changed")
         }
-        // A resize is the overlay's to end; a drag keeps the suggestion.
-        if frame.size == current.view.window.size { state = .shown(current.moved(to: frame)) }
     }
 
-    /// The app left the front, the settings changed, or a new trigger came.
-    func reset(detail: String = "app_deactivated") {
+    /// The settings changed, or a new trigger came here or in another app.
+    func reset(detail: String) {
         switch state {
         case .shown(let shown):
             dismiss(shown, event: "voided", detail: detail)
-        case .working:
+        case .working(let id):
             call?.cancel()
             call = nil
             state = .idle
+            SuggestionActivity.shared.clear(id)
             overlay.hide()
+        case .waiting(let waiting):
+            drop(waiting, detail: detail)
         case .idle:
             break
+        }
+        missed = nil
+    }
+
+    func leave() {
+        switch state {
+        case .working:
+            // The work goes on; its suggestion waits for this chat.
+            overlay.hide()
+        case .shown(let shown):
+            stopWatch()
+            overlay.hide()
+            wait(shown, reported: true)
+        case .waiting, .idle:
+            break
+        }
+    }
+
+    // MARK: - Waiting
+
+    private func wait(_ shown: Shown, reported: Bool) {
+        call = nil
+        state = .waiting(Waiting(shown: shown, reported: reported, since: Date()))
+        SuggestionActivity.shared.set(.ready, for: shown.requestID)
+        startWaitTimer()
+    }
+
+    private func startWaitTimer() {
+        stopWaitTimer()
+        waitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.waitTick() }
+        }
+    }
+
+    private func stopWaitTimer() {
+        waitTimer?.invalidate()
+        waitTimer = nil
+    }
+
+    private func drop(_ waiting: Waiting, detail: String) {
+        stopWaitTimer()
+        state = .idle
+        SuggestionActivity.shared.clear(waiting.shown.requestID)
+        feedback(waiting.shown.requestID, "voided", chatID: waiting.shown.chatID, mode: waiting.shown.mode,
+                 suggestionLen: waiting.shown.text.count, detail: detail)
+    }
+
+    private func waitTick() {
+        guard !resuming else { return }
+        resuming = true
+        Task {
+            await checkWaiting()
+            resuming = false
+        }
+    }
+
+    /// One look for the waiting suggestion's chat. It looks at the window
+    /// only while its app is in front: another app in front is all it takes
+    /// to know the chat was left.
+    func checkWaiting() async {
+        if let missed {
+            if Date().timeIntervalSince(missed.since) > SuggestionActivity.waitLifetime {
+                self.missed = nil
+            } else if isFront(missed.pid) {
+                self.missed = nil
+                overlay.showToast(L10n.tr("刚才的建议没生成出来：\(missed.message)", "The last suggestion could not be made: \(missed.message)"),
+                                  input: missed.near, duration: 4, kind: .warning)
+            }
+        }
+        guard case .waiting(let waiting) = state else {
+            if missed == nil { stopWaitTimer() }
+            return
+        }
+        if Date().timeIntervalSince(waiting.since) > SuggestionActivity.waitLifetime {
+            drop(waiting, detail: "expired")
+            return
+        }
+        guard isFront(waiting.shown.view.pid) else { return }
+        await resume(waiting.shown.requestID)
+    }
+
+    private func isWaiting(_ id: String) -> Waiting? {
+        if case .waiting(let waiting) = state, waiting.shown.requestID == id { return waiting }
+        return nil
+    }
+
+    /// Shows the waiting suggestion when the user is back on its chat with
+    /// the same draft, and drops it when the draft or the chat moved on.
+    private func resume(_ id: String) async {
+        guard let waiting = isWaiting(id) else { return }
+        let found = await presence(waiting.shown.view)
+        guard let current = isWaiting(id) else { return }
+        switch found {
+        case .elsewhere:
+            break
+        case .draftChanged:
+            drop(current, detail: "input_changed")
+        case .same(let now):
+            // Newer messages leave it alone: the user can ask for a new one.
+            guard isFront(now.pid) else { return }
+            let shown = current.shown.at(now)
+            let asGhost = present(shown)
+            if !current.reported {
+                feedback(id, "shown", chatID: shown.chatID, mode: shown.mode, suggestionLen: shown.text.count,
+                         latency: ms(since: shown.started), detail: asGhost ? "ghost" : "bubble")
+            }
+            Log.info("\(reader.name)：回到原会话，显示等待中的建议")
         }
     }
 
@@ -445,11 +662,11 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             stopWatch()
             return
         }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier != shown.view.pid {
-            dismiss(shown, event: "voided", detail: "app_deactivated")
-        } else if Date().timeIntervalSince(shown.shownAt) > 120 {
-            dismiss(shown, event: "voided", detail: "timeout")
-        }
+        // A shown suggestion has no time limit: only typing ends it.
+        guard !isFront(shown.view.pid) else { return }
+        stopWatch()
+        overlay.hide()
+        wait(shown, reported: true)
     }
 
     // MARK: - Accept

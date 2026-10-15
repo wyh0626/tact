@@ -41,7 +41,9 @@ The interface language does not overwrite your writing preferences or change the
 ## Models and writing style
 
 - **ChatGPT account:** sign in to use your plan without an API key.
-- **OpenAI, DeepSeek, or a custom OpenAI-compatible endpoint:** API keys stay in the macOS Keychain.
+- **Cloud providers:** presets for OpenAI, DeepSeek, Claude, Gemini, Zhipu, Kimi, Qwen, Doubao, SiliconFlow, OpenRouter and MiniMax. Load the endpoint’s model list, select a model or type its ID. API keys are stored per connection in macOS Keychain.
+- **Custom endpoints:** choose OpenAI Chat Completions, OpenAI Responses, Claude Messages or Gemini explicitly. Provider parameters and extension headers belong in Advanced settings.
+- **Reasoning controls:** API-reported capabilities take priority; missing fields use the provider's standard levels, never guesses from model names. Manual model IDs remain supported, and a parameter a model refuses is dropped automatically. Saving preserves manual parameters; output limits and timeouts are adjustable in Advanced settings.
 - **Local:** download a supported Qwen3 model and run it on your Mac with the bundled llama.cpp runtime.
 
 In **Writing style**, describe how you speak: concise or casual, preferred language, how you decline requests. Sections headed with `##` can give different conversations different styles.

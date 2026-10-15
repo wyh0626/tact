@@ -53,24 +53,43 @@ enum MenuBarMark {
         return image
     }
 
-    /// The mark with a dot in its top right corner, set off by a clear ring,
-    /// while a new version waits.
-    static func image(badged: Bool) -> NSImage {
+    /// The mark with a dot in its top right corner while a new version
+    /// waits, and in its bottom right corner a ring while a suggestion is
+    /// generated or a dot while one waits for its chat. Each is set off by
+    /// a clear ring.
+    static func image(badged: Bool, activity: SuggestionActivity.Kind = .none) -> NSImage {
         let mark = image()
-        guard badged else { return mark }
-        let badged = NSImage(size: mark.size, flipped: false) { rect in
+        guard badged || activity != .none else { return mark }
+        let marked = NSImage(size: mark.size, flipped: false) { rect in
             mark.draw(in: rect)
-            let dot = NSRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 6, height: 6)
-            NSGraphicsContext.current?.compositingOperation = .clear
-            NSBezierPath(ovalIn: dot.insetBy(dx: -1.5, dy: -1.5)).fill()
-            NSGraphicsContext.current?.compositingOperation = .sourceOver
-            NSColor.black.setFill()
-            NSBezierPath(ovalIn: dot).fill()
+            if badged { dot(NSRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 6, height: 6), filled: true) }
+            if activity != .none { dot(NSRect(x: rect.maxX - 6, y: rect.minY, width: 6, height: 6), filled: activity == .ready) }
             return true
         }
-        badged.isTemplate = true
-        badged.accessibilityDescription = L10n.tr("Tact，有新版本", "Tact, update available")
-        return badged
+        marked.isTemplate = true
+        var description = ["Tact"]
+        if badged { description.append(L10n.tr("有新版本", "update available")) }
+        switch activity {
+        case .generating: description.append(L10n.tr("正在生成建议", "generating a suggestion"))
+        case .ready: description.append(L10n.tr("建议已准备好，回到原会话查看", "suggestion ready in its chat"))
+        case .none: break
+        }
+        marked.accessibilityDescription = description.joined(separator: L10n.tr("，", ", "))
+        return marked
+    }
+
+    private static func dot(_ rect: NSRect, filled: Bool) {
+        NSGraphicsContext.current?.compositingOperation = .clear
+        NSBezierPath(ovalIn: rect.insetBy(dx: -1.5, dy: -1.5)).fill()
+        NSGraphicsContext.current?.compositingOperation = .sourceOver
+        NSColor.black.set()
+        if filled {
+            NSBezierPath(ovalIn: rect).fill()
+        } else {
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+            ring.lineWidth = 1.5
+            ring.stroke()
+        }
     }
 
     /// The repository's copies at every scale, for tests and `swift run`.

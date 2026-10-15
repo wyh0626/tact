@@ -10,6 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wyh0626/tact/engine/internal/model"
+	"github.com/wyh0626/tact/engine/internal/reasoning"
 )
 
 type Config struct {
@@ -45,11 +48,10 @@ type AdapterConfig struct {
 }
 
 type ModelConfig struct {
-	// Provider is "" (or "openai") for any OpenAI-compatible
-	// /chat/completions endpoint with an API key, "chatgpt" for the
-	// Responses API with a ChatGPT sign-in, billed to the user's plan, or
-	// "local" for a downloaded model run by the bundled llama-server.
+	// Provider identifies the service preset. Protocol selects its wire API;
+	// missing Protocol preserves the legacy provider-derived behavior.
 	Provider        string   `json:"provider"`
+	Protocol        string   `json:"protocol,omitempty"`
 	BaseURL         string   `json:"base_url"`
 	Model           string   `json:"model"`
 	APIKeyEnv       string   `json:"api_key_env"`
@@ -64,13 +66,32 @@ type ModelConfig struct {
 	// empty leaves the model's default. Which values work depends on the
 	// model.
 	ReasoningEffort string `json:"reasoning_effort"`
+	// Reasoning is the optional desktop-selected provider-specific control.
+	// Missing preserves legacy reasoning_effort and extra_body behavior.
+	Reasoning *reasoning.Config `json:"reasoning,omitempty"`
 	// ServiceTier "priority" asks for Fast mode: quicker answers that use
 	// more of the plan or cost more. Empty is the standard tier.
 	ServiceTier string `json:"service_tier"`
 	// ExtraBody is merged into every request for provider-specific switches,
 	// e.g. {"thinking": {"type": "disabled"}} for DeepSeek.
-	ExtraBody map[string]any `json:"extra_body"`
-	Local     LocalModel     `json:"local"`
+	ExtraBody map[string]any    `json:"extra_body"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Local     LocalModel        `json:"local"`
+}
+
+// EffectiveProtocol returns the selected API, retaining old config behavior.
+// ChatGPT account sign-in and the bundled local model use their own lifecycle.
+func (m ModelConfig) EffectiveProtocol() string {
+	if m.Provider == "chatgpt" || m.Provider == "local" {
+		return m.Provider
+	}
+	if m.Protocol != "" {
+		return m.Protocol
+	}
+	if m.Provider == "anthropic" || m.Provider == "gemini" {
+		return m.Provider
+	}
+	return "openai"
 }
 
 // LocalModel is a downloaded model for the "local" provider.
@@ -207,21 +228,55 @@ func (c *Config) expand() {
 // Validate checks the settings the engine cannot run without.
 func (c Config) Validate() error {
 	var problems []string
+	protocol := c.Model.EffectiveProtocol()
+	if err := c.Model.Reasoning.Validate(protocol); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if err := model.ValidateHeaders(c.Model.Headers); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if strings.TrimSpace(c.Model.Model) == "" {
 		problems = append(problems, "model.model 不能为空")
 	}
 	switch c.Model.Provider {
-	case "", "openai", "chatgpt":
+	case "", "openai", "deepseek", "anthropic", "gemini", "chatgpt", "custom",
+		"zhipu", "moonshot", "qwen", "doubao", "siliconflow", "openrouter", "minimax":
 	case "local":
 		if strings.TrimSpace(c.Model.Local.Path) == "" {
 			problems = append(problems, "本机模型需要 model.local.path（下载好的 .gguf 文件）")
 		}
 	default:
-		problems = append(problems, fmt.Sprintf("model.provider 只能是 openai、chatgpt 或 local，现在是 %q", c.Model.Provider))
+		problems = append(problems, fmt.Sprintf("不支持的 model.provider %q", c.Model.Provider))
+	}
+	if c.Model.Protocol != "" {
+		switch c.Model.Protocol {
+		case "openai", "responses", "anthropic", "gemini":
+		default:
+			problems = append(problems, "model.protocol 只能是 openai、responses、anthropic 或 gemini")
+		}
+		if c.Model.Provider == "chatgpt" || c.Model.Provider == "local" {
+			problems = append(problems, "ChatGPT 账号和本机模型不能设置 model.protocol")
+		}
+	}
+	if protocol == "anthropic" || protocol == "gemini" {
+		if c.Model.ReasoningEffort != "" {
+			problems = append(problems, "anthropic/gemini 不支持通用 model.reasoning_effort，请在模型设置界面或 model.reasoning 设置推理，也可使用原生 model.extra_body 参数")
+		}
+		if c.Model.ServiceTier != "" {
+			problems = append(problems, "anthropic/gemini 不支持 model.service_tier，请使用对应原生 API 的 model.extra_body 参数")
+		}
+	}
+	if protocol == "anthropic" {
+		if c.Model.JSONMode {
+			problems = append(problems, "anthropic 不支持通用 model.json_mode")
+		}
+		if c.Model.MaxTokens <= 0 {
+			problems = append(problems, "anthropic 需要 model.max_tokens 大于 0")
+		}
 	}
 	// A local model never leaves the machine; there is no endpoint to allow.
 	if c.Model.Provider != "local" && !BaseURLAllowed(c.Model.BaseURL, c.Model.AllowedBaseURLs) {
-		problems = append(problems, fmt.Sprintf("model.base_url %q 不在 model.allowed_base_urls 白名单里", c.Model.BaseURL))
+		problems = append(problems, "model.base_url 无效或不在 model.allowed_base_urls 白名单里")
 	}
 	// sockaddr_un.sun_path is 104 bytes on macOS, including the trailing NUL.
 	if len(c.Socket) >= 104 {
@@ -238,7 +293,7 @@ func (c Config) Validate() error {
 // allowed path.
 func BaseURLAllowed(base string, allowed []string) bool {
 	b, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || b.Host == "" || (b.Scheme != "http" && b.Scheme != "https") {
+	if err != nil || b.Host == "" || b.User != nil || b.RawQuery != "" || b.Fragment != "" || (b.Scheme != "http" && b.Scheme != "https") {
 		return false
 	}
 	bp := strings.TrimSuffix(b.Path, "/")

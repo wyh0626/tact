@@ -78,6 +78,7 @@ struct ConfigFile {
         ConfigFile(root: [
             "socket": "~/.tact/engine.sock",
             "model": [
+                "provider": "deepseek",
                 "base_url": ModelProvider.deepseek.baseURL,
                 "model": ModelProvider.deepseek.defaultModel,
                 "api_key_env": AppConfig.defaultAPIKeyEnv,
@@ -111,7 +112,7 @@ struct ConfigFile {
 
 /// How a provider lets the user trade speed against reasoning depth.
 enum SpeedControls: Hashable {
-    /// Nothing to set (local models, custom endpoints).
+    /// No shared speed controls. Native and custom APIs use model capabilities.
     case none
     /// DeepSeek: thinking off, or on at low / high / max effort.
     case deepseek
@@ -126,8 +127,31 @@ enum KeyPolicy: Hashable {
     case required, optional, none
 }
 
-/// Model endpoints offered in onboarding and settings. Any OpenAI-compatible
-/// endpoint works through "custom".
+/// The request protocol is independent of the service's brand or host.
+enum ModelProtocol: String, CaseIterable, Identifiable {
+    case openai, responses, anthropic, gemini
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .openai: return "OpenAI Chat Completions"
+        case .responses: return "OpenAI Responses"
+        case .anthropic: return "Anthropic Messages"
+        case .gemini: return "Gemini GenerateContent"
+        }
+    }
+    var endpointDetail: String {
+        switch self {
+        case .openai, .responses: return L10n.tr("API 基址，例如 https://example.com/v1，不含请求路径", "API base URL, e.g. https://example.com/v1, without the request path")
+        case .anthropic: return L10n.tr("Anthropic API 基址，不含 /v1/messages", "Anthropic API base URL, without /v1/messages")
+        case .gemini: return L10n.tr("Gemini API 基址，不含模型路径", "Gemini API base URL, without the model path")
+        }
+    }
+    static func resolved(_ raw: String?, provider: ModelProvider) -> ModelProtocol {
+        raw.flatMap(Self.init(rawValue:)) ?? provider.defaultProtocol
+    }
+}
+
+/// Model endpoints offered in onboarding and settings.
 struct ModelProvider: Identifiable, Hashable {
     let id: String
     var name: String {
@@ -135,6 +159,15 @@ struct ModelProvider: Identifiable, Hashable {
         case "chatgpt": return L10n.tr("ChatGPT 账号", "ChatGPT account")
         case "deepseek": return "DeepSeek"
         case "openai": return "OpenAI"
+        case "anthropic": return "Claude"
+        case "gemini": return "Gemini"
+        case "zhipu": return L10n.tr("智谱", "Zhipu")
+        case "moonshot": return "Kimi"
+        case "qwen": return L10n.tr("通义千问", "Qwen")
+        case "doubao": return L10n.tr("豆包", "Doubao")
+        case "siliconflow": return L10n.tr("硅基流动", "SiliconFlow")
+        case "openrouter": return "OpenRouter"
+        case "minimax": return "MiniMax"
         case "local": return L10n.tr("本机", "Local")
         default: return L10n.tr("自定义", "Custom")
         }
@@ -144,8 +177,17 @@ struct ModelProvider: Identifiable, Hashable {
         case "chatgpt": return L10n.tr("用你的 Plus / Pro 套餐额度，不需要 API Key", "Uses your Plus / Pro plan. No API key needed.")
         case "deepseek": return L10n.tr("云端，便宜、中文好", "Cloud model; affordable, strong in Chinese")
         case "openai": return L10n.tr("ChatGPT 账号或 API Key", "ChatGPT account or API key")
+        case "anthropic": return L10n.tr("Anthropic 原生接口，用 API Key", "Anthropic API with an API key")
+        case "gemini": return L10n.tr("Google 原生接口，用 API Key", "Google API with an API key")
         case "local": return L10n.tr("下载模型到这台 Mac，聊天内容不出电脑", "Download to this Mac; keep chats on-device")
-        default: return L10n.tr("任何兼容 OpenAI 接口的服务，比如 Ollama、公司网关", "Any OpenAI-compatible service, such as Ollama")
+        case "zhipu": return L10n.tr("智谱 BigModel 标准 API", "BigModel standard API")
+        case "moonshot": return L10n.tr("月之暗面 Moonshot API", "Moonshot AI API")
+        case "qwen": return L10n.tr("阿里云百炼，北京地域", "Alibaba Cloud Model Studio, Beijing")
+        case "doubao": return L10n.tr("火山方舟，北京地域", "Volcengine Ark, Beijing")
+        case "siliconflow": return L10n.tr("国内多模型推理服务", "Multi-model inference service")
+        case "openrouter": return L10n.tr("统一路由多家模型服务", "Routes requests to multiple model providers")
+        case "minimax": return L10n.tr("MiniMax 国内标准 API", "MiniMax China standard API")
+        default: return L10n.tr("选择接口协议，连接公司网关或其他模型服务", "Choose a protocol for a gateway or another model service")
         }
     }
     let baseURL: String
@@ -168,6 +210,12 @@ struct ModelProvider: Identifiable, Hashable {
     static let openai = ModelProvider(
         id: "openai", baseURL: "https://api.openai.com/v1",
         defaultModel: "", key: .required, speed: .openai, symbol: "sparkles")
+    static let anthropic = ModelProvider(
+        id: "anthropic", baseURL: "https://api.anthropic.com",
+        defaultModel: "", key: .required, speed: .none, symbol: "asterisk")
+    static let gemini = ModelProvider(
+        id: "gemini", baseURL: "https://generativelanguage.googleapis.com",
+        defaultModel: "", key: .required, speed: .none, symbol: "diamond")
     /// A downloaded model run by the llama-server inside the app.
     static let local = ModelProvider(
         id: "local", baseURL: "",
@@ -176,14 +224,43 @@ struct ModelProvider: Identifiable, Hashable {
         id: "custom", baseURL: "",
         defaultModel: "", key: .optional, speed: .none, symbol: "slider.horizontal.3")
 
-    /// Endpoints a config is matched to by its base URL.
-    static let presets = [deepseek, openai, custom]
+    static let zhipu = ModelProvider(id: "zhipu", baseURL: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "", key: .required, speed: .none, symbol: "brain")
+    static let moonshot = ModelProvider(id: "moonshot", baseURL: "https://api.moonshot.cn/v1", defaultModel: "", key: .required, speed: .none, symbol: "moon")
+    static let qwen = ModelProvider(id: "qwen", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", defaultModel: "", key: .required, speed: .none, symbol: "cloud")
+    static let doubao = ModelProvider(id: "doubao", baseURL: "https://ark.cn-beijing.volces.com/api/v3", defaultModel: "", key: .required, speed: .none, symbol: "bubble.left")
+    static let siliconflow = ModelProvider(id: "siliconflow", baseURL: "https://api.siliconflow.cn/v1", defaultModel: "", key: .required, speed: .none, symbol: "square.stack.3d.up")
+    static let openrouter = ModelProvider(id: "openrouter", baseURL: "https://openrouter.ai/api/v1", defaultModel: "", key: .required, speed: .none, symbol: "arrow.triangle.branch")
+    static let minimax = ModelProvider(id: "minimax", baseURL: "https://api.minimax.cn/v1", defaultModel: "", key: .required, speed: .none, symbol: "waveform")
+
+    /// Presets use regional standard API endpoints; other regions/plans remain editable.
+    static let presets = [openai, deepseek, anthropic, gemini, zhipu, moonshot, qwen, doubao, siliconflow, openrouter, minimax, custom]
     /// The provider cards. ChatGPT sign-in is OpenAI with another way in,
     /// so it shares OpenAI's card and is picked inside it.
-    static let cards = [openai, deepseek, local, custom]
+    static let cards = [openai, deepseek, anthropic, gemini, zhipu, moonshot, qwen, doubao, siliconflow, openrouter, minimax, local, custom]
 
     /// The card this provider is shown under.
     var cardID: String { usesSignIn ? ModelProvider.openai.id : id }
+
+    /// A newly selected custom connection records its protocol explicitly.
+    var configurationValue: String? { id }
+
+    var defaultProtocol: ModelProtocol {
+        switch id {
+        case "anthropic": return .anthropic
+        case "gemini": return .gemini
+        default: return .openai
+        }
+    }
+    /// The account keeps its dedicated OAuth Responses path.
+    var apiProtocol: String { usesSignIn ? id : defaultProtocol.rawValue }
+
+    var endpointDetail: String {
+        switch id {
+        case "anthropic": return L10n.tr("Anthropic API 的基址，不含 /v1/messages", "Anthropic API base URL, without /v1/messages")
+        case "gemini": return L10n.tr("Gemini API 的基址，不含模型路径", "Gemini API base URL, without the model path")
+        default: return L10n.tr("兼容 OpenAI 的 /v1 地址", "An OpenAI-compatible /v1 URL")
+        }
+    }
 
     /// The preset an existing config belongs to. ChatGPT sign-in shares
     /// OpenAI's endpoint and a local model has none, so both are told apart
@@ -191,7 +268,12 @@ struct ModelProvider: Identifiable, Hashable {
     static func matching(provider: String?, baseURL: String) -> ModelProvider {
         if provider == "chatgpt" { return chatgpt }
         if provider == "local" { return local }
+        if provider == "deepseek" { return deepseek }
+        if provider == "anthropic" { return anthropic }
+        if provider == "gemini" { return gemini }
+        if provider == "custom" { return custom }
+        if let known = [zhipu, moonshot, qwen, doubao, siliconflow, openrouter, minimax].first(where: { $0.id == provider }) { return known }
         let origin = ConfigFile.origin(of: baseURL)
-        return presets.first { !$0.baseURL.isEmpty && ConfigFile.origin(of: $0.baseURL) == origin } ?? custom
+        return [deepseek, openai, zhipu, moonshot, qwen, doubao, siliconflow, openrouter, minimax].first { ConfigFile.origin(of: $0.baseURL) == origin } ?? custom
     }
 }

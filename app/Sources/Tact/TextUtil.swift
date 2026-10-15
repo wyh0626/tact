@@ -34,6 +34,9 @@ enum TextUtil {
         return nil
     }
 
+    /// Two readings of the same text, read alike apart from spacing and case.
+    static func same(_ a: String, _ b: String) -> Bool { difference(a, b) == nil }
+
     private static func difference(_ a: String, _ b: String) -> String? {
         let before = Array(normalize(a)), after = Array(normalize(b))
         guard before != after else { return nil }

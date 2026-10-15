@@ -106,6 +106,12 @@ func handleConn(parent context.Context, conn net.Conn, h Handler, logf func(stri
 		if !resp.OK {
 			status = resp.ErrorCode
 		}
+		if resp.ErrorCode == suggest.CodeModel {
+			// Why the model call failed, such as a rate limit or a refused
+			// parameter: the engine's message and at most 300 characters of
+			// the service's error reply.
+			status += "（" + resp.Error + "）"
+		}
 		logf("%s %s → %s，用时 %s", req.Op, short(req.RequestID), status, time.Since(started).Round(time.Millisecond))
 	}
 	writeResponse(conn, resp)

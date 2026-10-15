@@ -24,6 +24,9 @@ struct AppConfig {
     /// Environment variable the engine reads the model key from; the app
     /// fills it from the keychain when it starts the engine.
     var apiKeyEnv = ""
+    /// Older configurations keep their original keychain entry. New
+    /// connections use an account scoped to their provider and origin.
+    var modelKeyAccount = Keychain.modelKey
 
     static let defaultAPIKeyEnv = "TACT_API_KEY"
     static let directory = NSString(string: "~/.tact").expandingTildeInPath
@@ -34,6 +37,19 @@ struct AppConfig {
         if !engineCommand.isEmpty { return engineCommand }
         guard let bundled = Bundle.main.url(forAuxiliaryExecutable: "tactd") else { return [] }
         return [bundled.path, "serve"]
+    }
+
+    /// A scoped connection receives only its own saved key. Legacy setups
+    /// can still supply their key through the app's launch environment.
+    func engineEnvironment(inheriting inherited: [String: String], modelKey: String?) -> [String: String] {
+        var environment = inherited
+        let keyEnv = apiKeyEnv.isEmpty ? Self.defaultAPIKeyEnv : apiKeyEnv
+        if let modelKey, !modelKey.isEmpty {
+            environment[keyEnv] = modelKey
+        } else if modelKeyAccount != Keychain.modelKey {
+            environment.removeValue(forKey: keyEnv)
+        }
+        return environment
     }
 
     /// Creates ~/.tact on first launch: a style file to edit and a config
@@ -93,19 +109,21 @@ struct AppConfig {
 
     /// Returns the config plus a human-readable problem when the file is
     /// missing or broken (defaults are used in that case).
-    static func load() -> (AppConfig, String?) {
+    static func load(from path: String = configPath) -> (AppConfig, String?) {
         var cfg = AppConfig()
-        guard let data = FileManager.default.contents(atPath: configPath) else {
+        guard let data = FileManager.default.contents(atPath: path) else {
             cfg.socketPath = expand(cfg.socketPath)
-            return (cfg, L10n.tr("没找到配置文件 \(configPath)，先运行 scripts/setup.sh",
-                                 "Configuration file not found at \(configPath). Run scripts/setup.sh first."))
+            return (cfg, L10n.tr("没找到配置文件 \(path)，先运行 scripts/setup.sh",
+                                 "Configuration file not found at \(path). Run scripts/setup.sh first."))
         }
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             cfg.socketPath = expand(cfg.socketPath)
-            return (cfg, L10n.tr("配置文件不是合法的 JSON：\(configPath)", "Invalid JSON in configuration file: \(configPath)"))
+            return (cfg, L10n.tr("配置文件不是合法的 JSON：\(path)", "Invalid JSON in configuration file: \(path)"))
         }
         if let v = root["socket"] as? String { cfg.socketPath = v }
         if let v = (root["model"] as? [String: Any])?["api_key_env"] as? String { cfg.apiKeyEnv = v }
+        if let v = (root["model"] as? [String: Any])?["api_key_account"] as? String,
+           !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { cfg.modelKeyAccount = v }
         let app = root["app"] as? [String: Any] ?? [:]
         if let v = app["hotkey"] as? String { cfg.hotkey = v }
         if let v = app["engine_command"] as? [String] { cfg.engineCommand = v.map(expand) }

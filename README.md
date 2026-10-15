@@ -69,11 +69,13 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-model-dark.png">
-  <img src="docs/images/settings-model-light.png" width="820" alt="设置里的模型：OpenAI、DeepSeek、本机、自定义四种">
+  <img src="docs/images/settings-model-light.png" width="820" alt="模型服务与连接设置">
 </picture>
 
 - **ChatGPT 账号**：用 Plus / Pro 套餐的额度，不需要 API Key。
-- **DeepSeek、OpenAI**，或任何兼容 OpenAI 接口的服务：Key 存在 macOS 钥匙串里。想要快，选不用思考的模型，或把推理程度调到最低。
+- **云端服务**：预设 OpenAI、DeepSeek、Claude、Gemini、智谱、Kimi、通义千问、豆包、硅基流动、OpenRouter 和 MiniMax。填好地址和 Key 后读取模型列表，下拉选择或手动填写模型 ID；Key 按连接存入 macOS 钥匙串。
+- **自定义接口**：明确选择 OpenAI Chat Completions、OpenAI Responses、Claude Messages 或 Gemini 协议；服务商专用参数和请求头放在「高级设置」。
+- **推理控制**：优先采用模型接口返回的能力，缺少的字段用服务商的通用档位补充，不按模型名猜测；模型 ID 可以手动填写，模型不接受的参数会自动去掉。普通保存保留手写参数；输出上限和超时可在高级设置调整。
 - **本机**：内置 llama.cpp，在设置里下载一个 Qwen3 模型，聊天内容不出这台 Mac。
 
 ## 照你的说话方式写

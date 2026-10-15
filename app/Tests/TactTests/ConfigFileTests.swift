@@ -45,6 +45,11 @@ struct ConfigFileTests {
         // Same endpoint as OpenAI with a key; told apart by model.provider.
         #expect(ModelProvider.matching(provider: nil, baseURL: "https://api.openai.com/v1") == .openai)
         #expect(ModelProvider.matching(provider: "chatgpt", baseURL: "https://api.openai.com/v1") == .chatgpt)
+        #expect(ModelProvider.matching(provider: "deepseek", baseURL: "https://gateway.example.com/deepseek/v1") == .deepseek)
+        #expect(ModelProvider.matching(provider: "anthropic", baseURL: "https://gateway.example.com/claude") == .anthropic)
+        #expect(ModelProvider.matching(provider: "gemini", baseURL: "https://gateway.example.com/google") == .gemini)
+        #expect(ModelProvider.matching(provider: nil, baseURL: ModelProvider.anthropic.baseURL) == .custom,
+                "an existing compatible endpoint must not silently switch to a native protocol")
     }
 
     @Test func initialConfigWritesForEngine() throws {
@@ -54,6 +59,7 @@ struct ConfigFileTests {
                                feedbackFile: "/tmp/feedback.jsonl").write(to: path)
         let back = try ConfigFile.load(from: path)
         #expect(back.string("model.base_url") == ModelProvider.deepseek.baseURL)
+        #expect(back.string("model.provider") == "deepseek")
         #expect(back.strings("model.allowed_base_urls").contains("https://api.deepseek.com"))
         #expect(back.string("app.hotkey") == "double+ctrl")
     }
@@ -71,6 +77,7 @@ struct ModelSettingsTests {
         #expect(settings.model == "deepseek-flash" && settings.reasoningEffort == "none")
         settings.write(into: &file)
         #expect(file.string("model.base_url") == "https://api.deepseek.com/v1")
+        #expect(file.string("model.provider") == "deepseek")
         #expect(file.strings("model.allowed_base_urls").contains("https://api.deepseek.com"))
         #expect(file.value("model.extra_body.thinking.type") as? String == "disabled")
         #expect(file.string("model.api_key_env") == AppConfig.defaultAPIKeyEnv)
@@ -104,7 +111,84 @@ struct ModelSettingsTests {
         settings.choose(.deepseek)
         #expect(settings.model == "deepseek-flash")
         settings.write(into: &file)
-        #expect(file.value("model.provider") == nil)
+        #expect(file.string("model.provider") == "deepseek")
+    }
+
+    @Test func legacyCompatibleConfigsKeepTheirProviderOnSave() {
+        Keychain.service = "io.github.wyh0626.tact.tests"
+        let providers: [String?] = [nil, "", "openai"]
+        for provider in providers {
+            var file = ConfigFile(root: ["model": ["base_url": ModelProvider.deepseek.baseURL,
+                                                   "model": "deepseek-flash", "api_key_env": "MY_EXISTING_KEY",
+                                                   "extra_body": ["thinking": ["type": "disabled"], "vendor_option": true]]])
+            file.set("model.provider", provider)
+            let settings = ModelSettings(file: file)
+            #expect(settings.provider == .deepseek)
+            settings.write(into: &file)
+            #expect(file.string("model.provider") == provider)
+            #expect(file.string("model.api_key_env") == "MY_EXISTING_KEY")
+            #expect(file.bool("model.extra_body.vendor_option") == true)
+        }
+    }
+
+    @Test func nativeProvidersSaveTheirProtocolAndCustomEndpoint() {
+        Keychain.service = "io.github.wyh0626.tact.tests"
+        for preset in [ModelProvider.anthropic, .gemini] {
+            var file = ConfigFile(root: ["model": ["base_url": ModelProvider.deepseek.baseURL,
+                                                   "model": "deepseek-flash", "reasoning_effort": "high",
+                                                   "json_mode": true, "service_tier": "priority",
+                                                   "extra_body": ["thinking": ["type": "disabled"], "old_vendor_option": true]]])
+            let settings = ModelSettings(file: file)
+            settings.choose(preset)
+            #expect(settings.baseURL == preset.baseURL)
+            #expect(settings.model.isEmpty, "a provider change must not keep the previous model name")
+            #expect(settings.keyRequired && settings.speedOptions.isEmpty)
+            settings.baseURL = "https://gateway.example.com/\(preset.id)"
+            settings.model = "native-model"
+            settings.apiKey = "test-key"
+            #expect(settings.validationError == nil)
+            settings.write(into: &file)
+            #expect(file.string("model.provider") == preset.id)
+            #expect(file.strings("model.allowed_base_urls").contains("https://gateway.example.com"))
+            #expect(file.value("model.reasoning_effort") == nil && file.value("model.service_tier") == nil)
+            #expect(file.string("model.extra_body.thinking.type") == nil)
+            #expect(file.bool("model.extra_body.old_vendor_option") == true, "unrelated gateway options survive a provider switch")
+            #expect(file.bool("model.json_mode") == (preset == .gemini ? true : nil))
+            let restored = ModelSettings(file: file)
+            #expect(restored.provider == preset && restored.baseURL == settings.baseURL)
+            restored.write(into: &file)
+            #expect(file.string("model.provider") == preset.id)
+        }
+    }
+
+    @Test func nativeConfigKeepsItsProviderSpecificOptionsOnSave() {
+        Keychain.service = "io.github.wyh0626.tact.tests"
+        for preset in [ModelProvider.anthropic, .gemini] {
+            var file = ConfigFile(root: ["model": ["provider": preset.id, "base_url": "https://gateway.example.com/native",
+                                                   "model": "native-model", "max_tokens": 600,
+                                                   "json_mode": preset == .gemini,
+                                                   "extra_body": ["thinking": ["type": "disabled"], "metadata": ["user_id": "test-user"]]]])
+            let settings = ModelSettings(file: file)
+            settings.write(into: &file)
+            #expect(file.string("model.provider") == preset.id)
+            #expect(file.string("model.base_url") == "https://gateway.example.com/native")
+            #expect(file.string("model.extra_body.thinking.type") == "disabled")
+            #expect(file.string("model.extra_body.metadata.user_id") == "test-user")
+            #expect(file.number("model.max_tokens") == 600)
+            #expect(file.bool("model.json_mode") == (preset == .gemini))
+        }
+    }
+
+    @Test func switchingBackToCompatibleProtocolKeepsUnrelatedOptions() {
+        Keychain.service = "io.github.wyh0626.tact.tests"
+        var file = ConfigFile(root: ["model": ["provider": "anthropic", "base_url": ModelProvider.anthropic.baseURL,
+                                               "model": "native-model", "extra_body": ["native_option": true]]])
+        let settings = ModelSettings(file: file)
+        settings.choose(.deepseek)
+        settings.write(into: &file)
+        #expect(file.string("model.provider") == "deepseek")
+        #expect(file.bool("model.extra_body.native_option") == true)
+        #expect(file.string("model.extra_body.thinking.type") == "disabled")
     }
 
     @Test func deepseekEffortTurnsThinkingOnOrOff() {
@@ -112,7 +196,7 @@ struct ModelSettingsTests {
         var file = ConfigFile(root: [:])
         let settings = ModelSettings(file: file)
         settings.choose(.deepseek)
-        #expect(settings.speedOptions.levels.map(\.effort) == ["none", "low", "high", "max"])
+        #expect(settings.speedOptions.levels.map(\.effort) == ["", "none", "low", "high", "max"])
         #expect(settings.speedOptions.fastTier == nil)
         settings.write(into: &file)
         #expect(file.value("model.extra_body.thinking.type") as? String == "disabled")
@@ -180,7 +264,7 @@ struct ModelSettingsTests {
 
     @Test func openAICardHoldsBothWaysIn() {
         Keychain.service = "io.github.wyh0626.tact.tests"
-        #expect(ModelProvider.cards.map(\.id) == ["openai", "deepseek", "local", "custom"])
+        #expect(ModelProvider.cards.map(\.id) == ["openai", "deepseek", "anthropic", "gemini", "zhipu", "moonshot", "qwen", "doubao", "siliconflow", "openrouter", "minimax", "local", "custom"])
         #expect(ModelProvider.chatgpt.cardID == "openai" && ModelProvider.openai.cardID == "openai")
         let settings = ModelSettings(file: ConfigFile(root: ["model": ["base_url": "https://api.deepseek.com/v1"]]))
         #expect(!settings.usesOpenAI)

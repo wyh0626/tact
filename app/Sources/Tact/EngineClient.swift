@@ -156,7 +156,6 @@ struct EngineResponse {
     let matchedLine: String?
     let suggestion: String?
     let mode: String
-    let lastMessageID: String?
     let notes: [String]
     /// The same warnings in a few characters each, for the ghost text.
     let shortNotes: [String]
@@ -176,7 +175,6 @@ struct EngineResponse {
         matchedLine = d["matched_line"] as? String
         suggestion = d["suggestion"] as? String
         mode = (d["mode"] as? String) ?? "complete"
-        lastMessageID = d["last_message_id"] as? String
         var n: [String] = []
         var short: [String] = []
         if (d["commits"] as? Bool) == true { n.append(L10n.tr("含承诺，发出前确认", "Contains a commitment; review before sending")); short.append(L10n.tr("含承诺", "Commitment")) }

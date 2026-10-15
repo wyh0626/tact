@@ -41,6 +41,11 @@ enum Theme {
     /// Under the pointer: a faint wash of the text colour, on any surface.
     static let hover = Color.primary.opacity(0.05)
     static let pressed = Color.primary.opacity(0.09)
+    /// A button's own fill: a tint of the text colour, so it reads on the
+    /// canvas and on a card alike without an outline of its own.
+    static let fill = Color.primary.opacity(0.06)
+    static let fillHover = Color.primary.opacity(0.1)
+    static let fillPressed = Color.primary.opacity(0.14)
     /// A text button's colour: quieter than ink, still 4.5:1 on every surface.
     static let quiet = dynamic(light: (0.388, 0.388, 0.420), dark: (0.631, 0.631, 0.667))
 
@@ -264,7 +269,8 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// A raised button that reads as one on the canvas and on a card.
+/// A filled button without an outline: cards already draw the one border a
+/// group needs, and a second ring inside them makes the page heavy.
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { Styled(configuration: configuration) }
 
@@ -279,10 +285,7 @@ struct SecondaryButtonStyle: ButtonStyle {
                 .foregroundStyle(Theme.ink)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(configuration.isPressed ? Theme.pill : Theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering && isEnabled ? Theme.hover : .clear))
-                    .shadow(color: .black.opacity(0.05), radius: 0.5, y: 0.5))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.controlLine))
+                    .fill(configuration.isPressed ? Theme.fillPressed : hovering && isEnabled ? Theme.fillHover : Theme.fill))
                 .opacity(isEnabled ? 1 : 0.45)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .onHover { hovering = $0 }

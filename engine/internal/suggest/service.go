@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/wyh0626/tact/engine/internal/feedback"
 	"github.com/wyh0626/tact/engine/internal/local"
 	"github.com/wyh0626/tact/engine/internal/model"
+	"github.com/wyh0626/tact/engine/internal/modelcatalog"
 	"github.com/wyh0626/tact/engine/internal/prompt"
 	"github.com/wyh0626/tact/engine/internal/resolve"
 )
@@ -43,6 +46,9 @@ type Request struct {
 	Limit         int            `json:"limit,omitempty"`
 	// Screen carries the chat for a screen platform, in place of a lookup.
 	Screen *ScreenChat `json:"screen,omitempty"`
+	// Connection is a temporary model-list connection from the settings form.
+	// Its key is used only in memory and is never stored by the engine.
+	Connection *modelcatalog.Connection `json:"connection,omitempty"`
 
 	// feedback
 	Event         string `json:"event,omitempty"`
@@ -60,33 +66,34 @@ type ChatRef struct {
 }
 
 type Response struct {
-	OK            bool              `json:"ok"`
-	Error         string            `json:"error,omitempty"`
-	ErrorCode     string            `json:"error_code,omitempty"`
-	Version       string            `json:"version,omitempty"`
-	PlatformID    string            `json:"platform_id,omitempty"`
-	Platforms     *[]PlatformStatus `json:"platforms,omitempty"`
-	Count         *int              `json:"count,omitempty"`
-	Chat          *ChatRef          `json:"chat,omitempty"`
-	MatchedLine   string            `json:"matched_line,omitempty"`
-	Method        string            `json:"method,omitempty"`
-	Candidates    []string          `json:"candidates,omitempty"`
-	Mode          string            `json:"mode,omitempty"`
-	Suggestion    *string           `json:"suggestion,omitempty"`
-	Commits       bool              `json:"commits,omitempty"`
-	NeedsCheck    bool              `json:"needs_check,omitempty"`
-	Sensitive     bool              `json:"sensitive,omitempty"`
-	LastMessageID string            `json:"last_message_id,omitempty"`
-	Valid         *bool             `json:"valid,omitempty"`
-	Chats         []ChatRef         `json:"chats,omitempty"`
-	Messages      []adapter.Message `json:"messages,omitempty"`
-	Stats         string            `json:"stats,omitempty"`
-	ChatGPT       *chatgpt.Status   `json:"chatgpt,omitempty"`
-	AuthURL       string            `json:"auth_url,omitempty"`
-	Models        []chatgpt.Model   `json:"models,omitempty"`
-	StatsData     *feedback.Numbers `json:"stats_data,omitempty"`
-	Note          string            `json:"note,omitempty"`
-	TimingMS      map[string]int64  `json:"timing_ms,omitempty"`
+	OK            bool                 `json:"ok"`
+	Error         string               `json:"error,omitempty"`
+	ErrorCode     string               `json:"error_code,omitempty"`
+	Version       string               `json:"version,omitempty"`
+	PlatformID    string               `json:"platform_id,omitempty"`
+	Platforms     *[]PlatformStatus    `json:"platforms,omitempty"`
+	Count         *int                 `json:"count,omitempty"`
+	Chat          *ChatRef             `json:"chat,omitempty"`
+	MatchedLine   string               `json:"matched_line,omitempty"`
+	Method        string               `json:"method,omitempty"`
+	Candidates    []string             `json:"candidates,omitempty"`
+	Mode          string               `json:"mode,omitempty"`
+	Suggestion    *string              `json:"suggestion,omitempty"`
+	Commits       bool                 `json:"commits,omitempty"`
+	NeedsCheck    bool                 `json:"needs_check,omitempty"`
+	Sensitive     bool                 `json:"sensitive,omitempty"`
+	LastMessageID string               `json:"last_message_id,omitempty"`
+	Valid         *bool                `json:"valid,omitempty"`
+	Chats         []ChatRef            `json:"chats,omitempty"`
+	Messages      []adapter.Message    `json:"messages,omitempty"`
+	Stats         string               `json:"stats,omitempty"`
+	ChatGPT       *chatgpt.Status      `json:"chatgpt,omitempty"`
+	AuthURL       string               `json:"auth_url,omitempty"`
+	Models        []chatgpt.Model      `json:"models,omitempty"`
+	Catalog       []modelcatalog.Model `json:"catalog,omitempty"`
+	StatsData     *feedback.Numbers    `json:"stats_data,omitempty"`
+	Note          string               `json:"note,omitempty"`
+	TimingMS      map[string]int64     `json:"timing_ms,omitempty"`
 }
 
 // Error codes returned to the app.
@@ -194,6 +201,8 @@ func NewFromConfig(cfg config.Config) *Service {
 		}}
 	} else {
 		m = &model.Client{
+			Provider:        cfg.Model.EffectiveProtocol(),
+			Preset:          cfg.Model.Provider,
 			BaseURL:         cfg.Model.BaseURL,
 			Model:           cfg.Model.Model,
 			APIKey:          key,
@@ -201,8 +210,10 @@ func NewFromConfig(cfg config.Config) *Service {
 			MaxTokens:       cfg.Model.MaxTokens,
 			JSONMode:        cfg.Model.JSONMode,
 			ReasoningEffort: cfg.Model.ReasoningEffort,
+			Reasoning:       cfg.Model.Reasoning,
 			ServiceTier:     cfg.Model.ServiceTier,
 			ExtraBody:       cfg.Model.ExtraBody,
+			Headers:         cfg.Model.Headers,
 			HTTP:            httpClient,
 		}
 	}
@@ -253,11 +264,58 @@ func (s *Service) Handle(ctx context.Context, req Request) Response {
 		return Response{OK: true, Stats: sum.String(), StatsData: &numbers}
 	case "model_test":
 		return s.modelTest(ctx)
+	case "model_catalog":
+		return s.modelCatalog(ctx, req.Connection)
 	case "chatgpt_status", "chatgpt_login", "chatgpt_logout", "chatgpt_models":
 		return s.chatgptOp(ctx, req.Op)
 	default:
 		return errorResponse(fail(CodeBadRequest, "未知操作 %q", req.Op))
 	}
+}
+
+func (s *Service) modelCatalog(ctx context.Context, input *modelcatalog.Connection) Response {
+	if input == nil {
+		return errorResponse(fail(CodeBadRequest, "获取模型列表需要 connection 设置"))
+	}
+	connection := *input
+	selected := config.ModelConfig{Provider: connection.Provider, Protocol: connection.Protocol}
+	connection.Protocol = selected.EffectiveProtocol()
+	if connection.APIKey == "" && connection.Provider == s.cfg.Model.Provider &&
+		connection.Protocol == s.cfg.Model.EffectiveProtocol() && sameModelOrigin(connection.BaseURL, s.cfg.Model.BaseURL) {
+		// Changing the endpoint or protocol must never forward the saved key.
+		connection.APIKey = os.Getenv(s.cfg.Model.APIKeyEnv)
+	}
+	client := model.NewHTTPClient(time.Duration(s.cfg.Model.TimeoutMS) * time.Millisecond)
+	models, err := modelcatalog.Discover(ctx, connection, client)
+	if err != nil {
+		return errorResponse(err)
+	}
+	return Response{OK: true, Catalog: models}
+}
+
+func sameModelOrigin(a, b string) bool {
+	left, err := url.Parse(strings.TrimSpace(a))
+	if err != nil || left.Host == "" || left.User != nil {
+		return false
+	}
+	right, err := url.Parse(strings.TrimSpace(b))
+	if err != nil || right.Host == "" || right.User != nil {
+		return false
+	}
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			if n, err := strconv.Atoi(p); err == nil {
+				return strconv.Itoa(n)
+			}
+			return p
+		}
+		if strings.EqualFold(u.Scheme, "https") {
+			return "443"
+		}
+		return "80"
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) && port(left) == port(right)
 }
 
 func errorResponse(err error) Response {

@@ -394,6 +394,20 @@ struct QuickPanelView: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
+                if speed.usesThinkingBudget && speed.reasoningEffort == "enabled" {
+                    RowDivider(inset: 12)
+                    Button { actions.openSettings(.model) } label: {
+                        HStack(spacing: 8) {
+                            Text(L10n.tr("思考预算", "Thinking budget"))
+                            Spacer(minLength: 8)
+                            Text("\(speed.thinkingBudget) tokens").monospacedDigit().foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        }
+                        .font(.system(size: 12)).foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                    }
+                    .buttonStyle(RowButtonStyle())
+                }
             }
             .disabled(savingSpeed)
             if savingSpeed {
@@ -406,12 +420,22 @@ struct QuickPanelView: View {
     }
 
     private var reasoningPicker: some View {
+        Group {
+            if speed.speedOptions.levels.count > 4 {
+                reasoningControl.pickerStyle(.menu)
+            } else {
+                reasoningControl.pickerStyle(.segmented)
+            }
+        }
+        .controlSize(.small).fixedSize()
+    }
+
+    private var reasoningControl: some View {
         Picker(L10n.tr("推理", "Reasoning"), selection: Binding(get: { speed.reasoningEffort },
                                                          set: { speed.reasoningEffort = $0; saveSpeed() })) {
             ForEach(speed.speedOptions.levels, id: \.self) { Text($0.label).tag($0.effort) }
         }
-        .labelsHidden().pickerStyle(.segmented).controlSize(.small)
-        .fixedSize()
+        .labelsHidden()
     }
 
     private var footer: some View {

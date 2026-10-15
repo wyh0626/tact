@@ -131,7 +131,7 @@ struct LocalModelTests {
         #expect(settings.model == "deepseek-flash")
         settings.write(into: &file)
         #expect(file.value("model.local") == nil && file.value("model.extra_body.chat_template_kwargs") == nil)
-        #expect(file.value("model.provider") == nil)
+        #expect(file.string("model.provider") == "deepseek")
     }
 
     @Test func choosingLocalUsesADownloadedModelOrPicksTheRecommendedOne() throws {

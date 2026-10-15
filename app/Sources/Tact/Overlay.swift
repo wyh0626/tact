@@ -17,6 +17,14 @@ final class Overlay: NSObject {
     /// Layers drawn for the current mode (working pixels, status marker);
     /// removed whenever the overlay switches mode.
     private var decorations: [CALayer] = []
+    /// While working: when it began, and the pixels' size, for the time
+    /// shown beside them once it runs long.
+    private var working: (started: Date, fontSize: CGFloat, pixelsWidth: CGFloat)?
+    private var elapsedTimer: Timer?
+    private var elapsedChip: CALayer?
+    /// A slow model reads as stuck without a sign of time passing; quick
+    /// replies stay free of the extra label.
+    nonisolated static let elapsedAfter = 3
 
     init(level: NSWindow.Level) {
         panel = NSPanel(
@@ -125,7 +133,8 @@ final class Overlay: NSObject {
         place(Self.workingFrame(caret: caret, input: input, fontSize: fontSize, offset: offset), shadow: false)
 
         // At rest the pixels fade out to the right like the ghost text in the
-        // app icon; the pulse runs over that unless the user reduces motion.
+        // app icon. Unless the user reduces motion, a slow wave lights each
+        // in turn: quiet enough to sit in someone else's chat window.
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let start = CACurrentMediaTime()
         for index in 0..<count {
@@ -135,19 +144,67 @@ final class Overlay: NSObject {
             let rest = Float(1 - 0.8 * Double(index) / Double(count - 1))
             dot.opacity = rest
             if animate {
-                let pulse = CABasicAnimation(keyPath: "opacity")
-                pulse.fromValue = rest * 0.2
-                pulse.toValue = 1
-                pulse.duration = 0.42
-                pulse.autoreverses = true
+                let low = NSNumber(value: rest * 0.3)
+                let pulse = CAKeyframeAnimation(keyPath: "opacity")
+                pulse.values = [low, low, 1, 1, low, low]
+                pulse.keyTimes = [0, 0.05, 0.15, 0.25, 0.65, 1]
+                pulse.timingFunctions = Array(repeating: CAMediaTimingFunction(controlPoints: 0.165, 0.84, 0.44, 1), count: 5)
+                pulse.duration = 1.6
                 pulse.repeatCount = .infinity
-                pulse.beginTime = start + Double(index) * 0.09
-                pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                pulse.beginTime = start + Double(index) * 0.12
                 dot.add(pulse, forKey: "pulse")
             }
             container.layer?.addSublayer(dot)
             decorations.append(dot)
         }
+        working = (Date(), fontSize, CGFloat(count) * pixel + CGFloat(count - 1) * gap)
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showElapsed() }
+        }
+    }
+
+    /// Past a few seconds, the seconds so far in a small chip beside the pixels.
+    func showElapsed(at now: Date = Date()) {
+        guard let working, panel.isVisible else { return }
+        let seconds = Int(now.timeIntervalSince(working.started))
+        guard let text = Self.elapsedText(seconds: seconds) else { return }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: max(10, working.fontSize - 2), weight: .medium)
+        label.attributedStringValue = NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        let fit = label.sizeThatFits(NSSize(width: 200, height: CGFloat.greatestFiniteMagnitude))
+        let height = container.bounds.height
+        let chip = CGRect(x: working.pixelsWidth + 6, y: max(0, (height - ceil(fit.height) - 2) / 2),
+                          width: ceil(fit.width) + 10, height: min(height, ceil(fit.height) + 2))
+        if elapsedChip == nil {
+            let layer = CALayer()
+            layer.cornerRadius = chip.height / 2
+            container.effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer.backgroundColor = Theme.surfaceNS.withAlphaComponent(0.92).cgColor
+            }
+            container.layer?.addSublayer(layer)
+            decorations.append(layer)
+            elapsedChip = layer
+        }
+        elapsedChip?.frame = chip
+        label.isHidden = false
+        label.frame = chip.insetBy(dx: 3, dy: 1)
+        var frame = panel.frame
+        frame.size.width = chip.maxX
+        panel.setFrame(frame, display: true)
+        container.frame.size.width = chip.maxX
+    }
+
+    /// "8s" once the work has run `elapsedAfter` seconds; nil before.
+    nonisolated static func elapsedText(seconds: Int) -> String? {
+        seconds >= elapsedAfter ? "\(seconds)s" : nil
+    }
+
+    private func stopElapsed() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = nil
+        working = nil
+        elapsedChip = nil
     }
 
     /// On the caret's row. Some apps report the caret of an empty input
@@ -254,6 +311,7 @@ final class Overlay: NSObject {
     func hide() {
         cancelAutoHide()
         stopFollowing()
+        stopElapsed()
         panel.orderOut(nil)
     }
 
@@ -392,6 +450,7 @@ final class Overlay: NSObject {
 
     @objc private func hideNow() {
         stopFollowing()
+        stopElapsed()
         panel.orderOut(nil)
     }
 
@@ -402,6 +461,7 @@ final class Overlay: NSObject {
     /// Clears what the previous mode drew.
     private func reset() {
         cancelAutoHide()
+        stopElapsed()
         decorations.forEach { $0.removeFromSuperlayer() }
         decorations.removeAll()
         label.isHidden = false

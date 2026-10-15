@@ -28,6 +28,9 @@ final class Controller: NSObject {
     /// The assistant of a plugin whose app is read off the screen, while that
     /// plugin's app is in front.
     private var pluginScreen: (id: String, session: ScreenSession)?
+    /// Every plugin's screen assistant made so far, kept while its app is in
+    /// the background so a suggestion being made there carries on.
+    private var pluginScreens: [String: ScreenSession] = [:]
     /// The practice chat of the first-run guide, while it is on screen.
     private weak var practice: PracticeChat?
     /// The practice chat is on screen and Tact is in front.
@@ -52,6 +55,11 @@ final class Controller: NSObject {
         let started: Date
         let platformID: String
         let generation: Int
+
+        /// The same trigger on the route in front now.
+        func on(generation: Int) -> Trigger {
+            Trigger(id: id, pid: pid, input: input, started: started, platformID: platformID, generation: generation)
+        }
     }
 
     private struct Pending {
@@ -60,7 +68,6 @@ final class Controller: NSObject {
         let mode: String
         let chatID: String
         let chatTitle: String
-        let lastMessageID: String
         let headerHash: UInt64
         let input: InputSnapshot
         let background: NSColor?
@@ -69,9 +76,13 @@ final class Controller: NSObject {
         let shownAt: Date
 
         /// The same suggestion shown again over a freshly read input box.
-        func restored(input: InputSnapshot) -> Pending {
-            Pending(trigger: trigger, text: text, mode: mode, chatID: chatID, chatTitle: chatTitle,
-                    lastMessageID: lastMessageID, headerHash: headerHash, input: input, background: background,
+        func restored(input: InputSnapshot) -> Pending { resumed(input: input, generation: trigger.generation) }
+
+        /// The same suggestion over a freshly read input box, on the route in
+        /// front now: its chat tool may have left the front and come back.
+        func resumed(input: InputSnapshot, generation: Int) -> Pending {
+            Pending(trigger: trigger.on(generation: generation), text: text, mode: mode, chatID: chatID, chatTitle: chatTitle,
+                    headerHash: headerHash, input: input, background: background,
                     notes: notes, shortNotes: shortNotes, shownAt: Date())
         }
     }
@@ -127,6 +138,16 @@ final class Controller: NSObject {
     /// come back over it.
     private var inserting = false
     private static let parkLifetime: TimeInterval = 600
+
+    /// A ready suggestion whose chat is not in front: the user moved to
+    /// another app or chat while it was made, or after it showed. It shows
+    /// again once that chat is back with the same input.
+    private var waiting: (pending: Pending, reported: Bool, since: Date)?
+    private var waitTimer: Timer?
+    private var resuming = false
+    /// A failure while the user was in another app, said once its chat tool
+    /// is back in front.
+    private var missed: (message: String, pid: pid_t, platformID: String, near: CGRect, since: Date)?
     private var engineProcess: Process?
     /// Write end of the engine's stdin. Never written to: when this process
     /// exits for any reason the pipe closes and the engine shuts itself down.
@@ -143,7 +164,7 @@ final class Controller: NSObject {
 
     private func makeScreenAssistant<Reader: ScreenReader>(_ reader: Reader, platformID: String) -> ScreenAssistant<Reader> {
         let assistant = ScreenAssistant(
-            reader: reader, platformID: platformID, overlay: overlay, capture: header,
+            reader: reader, platformID: platformID, overlay: overlay, desk: .live(header),
             callEngine: { [weak self] payload, token in
                 guard let self else { throw EngineError.cancelled }
                 return try await self.callEngine(payload, token: token)
@@ -275,17 +296,28 @@ final class Controller: NSObject {
         if activePlatform != nil { schedulePrefetch(after: 0.3) }
     }
 
-    /// Switching instances retires all UI and asynchronous cache work.
+    /// New settings or a restarted engine retire all UI, every suggestion,
+    /// and asynchronous cache work.
     private func resetPlatformState() {
-        routeGeneration += 1
         builtInSessions.values.forEach { $0.reset(detail: "platform_changed") }
-        pluginScreen?.session.reset(detail: "platform_changed")
-        pluginScreen = nil
+        pluginScreens.values.forEach { $0.reset(detail: "platform_changed") }
+        pluginScreens.removeAll()
+        dropWaiting(detail: "platform_changed")
+        missed = nil
         if case .shown(let pending) = state { invalidate(pending, reason: "platform_changed", toast: nil) }
         cancelWorking()
+        leavePlatform()
+    }
+
+    /// Another chat tool came to the front: its route's UI and caches go,
+    /// while a suggestion being made or shown here waits for its chat.
+    private func leavePlatform() {
+        routeGeneration += 1
+        pluginScreen?.session.leave()
+        pluginScreen = nil
+        if case .shown(let pending) = state { wait(pending, reported: true) }
         stopWatch()
         overlay.hide()
-        state = .idle
         clearParked()
         chatCache = nil
         prepared = nil
@@ -306,17 +338,19 @@ final class Controller: NSObject {
     /// Keyboard handling is active only for a uniquely matched platform.
     private func updateForFrontmost(_ frontmost: NSRunningApplication?) {
         let practiceFront = practice != nil && frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
-        if practiceActive && !practiceFront { practice?.reset(detail: "app_deactivated") }
+        if practiceActive && !practiceFront { practice?.leave() }
         practiceActive = practiceFront
         let builtInFront = BuiltInApp.app(bundleID: frontmost?.bundleIdentifier).flatMap { config.builtIn.contains($0) ? $0 : nil }
-        if let active = builtInActive, active != builtInFront { builtInSessions[active]?.reset(detail: "app_deactivated") }
+        if let active = builtInActive, active != builtInFront { builtInSessions[active]?.leave() }
         builtInActive = builtInFront
         let match = builtInFront != nil ? nil : config.platformRegistry.match(bundleID: frontmost?.bundleIdentifier)
         if activePlatform?.id != match?.id {
-            resetPlatformState()
+            leavePlatform()
             activePlatform = match
         }
-        if let match, pluginScreen == nil, let session = screenSession(for: match, bundleID: frontmost?.bundleIdentifier) {
+        if let match, pluginScreen == nil,
+           let session = pluginScreens[match.id] ?? screenSession(for: match, bundleID: frontmost?.bundleIdentifier) {
+            pluginScreens[match.id] = session
             pluginScreen = (match.id, session)
         }
         header.config = runtimeConfig
@@ -389,10 +423,8 @@ final class Controller: NSObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = Array(command.dropFirst()) + ["--exit-with-stdin"]
-        var environment = ProcessInfo.processInfo.environment
-        let keyEnv = config.apiKeyEnv.isEmpty ? AppConfig.defaultAPIKeyEnv : config.apiKeyEnv
-        if let key = Keychain.read(Keychain.modelKey), !key.isEmpty { environment[keyEnv] = key }
-        process.environment = environment
+        process.environment = config.engineEnvironment(inheriting: ProcessInfo.processInfo.environment,
+                                                       modelKey: Keychain.read(config.modelKeyAccount))
         let lifeline = Pipe()
         process.standardInput = lifeline
         let logPath = Self.engineLogPath
@@ -502,8 +534,13 @@ final class Controller: NSObject {
     /// One short request with the current model settings, for the test
     /// connection button.
     func testModel(timeout: TimeInterval = 30) async -> (ok: Bool, message: String) {
-        guard let r = try? await engine.call(["op": "model_test"], timeout: timeout) else {
-            return (false, L10n.tr("连不上引擎", "Cannot connect to the engine"))
+        let r: [String: Any]
+        do {
+            r = try await engine.call(["op": "model_test"], timeout: timeout)
+        } catch {
+            // Keep IPC timeout, invalid response and connection failures
+            // distinct; a slow model request is not an engine-connect error.
+            return (false, error.localizedDescription)
         }
         let response = EngineResponse(r)
         guard response.ok else { return (false, response.error ?? L10n.tr("模型出错", "Model error")) }
@@ -630,6 +667,7 @@ final class Controller: NSObject {
         let app = NSWorkspace.shared.frontmostApplication
         updateForFrontmost(app)
         if let session = activeScreen, let app {
+            supersede(except: session)
             session.trigger(app)
             return
         }
@@ -637,7 +675,7 @@ final class Controller: NSObject {
               platform.manifest?.capabilities["composer.read"] == true,
               platform.manifest?.capabilities["composer.apply"] == true else { return }
         if case .shown(let p) = state { dismiss(p, event: "dismissed", detail: "retriggered") }
-        cancelWorking()
+        supersede(except: nil)
         clearParked()
         guard let snap = AX.inputSnapshot(pid: app.processIdentifier) else {
             Log.info("没拿到输入框：先点一下聊天应用的输入框再按快捷键")
@@ -649,30 +687,55 @@ final class Controller: NSObject {
         if requestPlatforms.count > 1024 { requestPlatforms.removeAll() }
         requestPlatforms[trigger.id] = platform.id
         state = .working(trigger)
+        SuggestionActivity.shared.set(.generating, for: trigger.id)
         overlay.showWorking(caret: snap.caret, input: snap.frame, fontSize: CGFloat(runtimeConfig.ghostFontSize),
                             offset: CGPoint(x: runtimeConfig.ghostOffsetX, y: runtimeConfig.ghostOffsetY))
         overlay.follow(pid: trigger.pid, frame: snap.windowFrame)
         Task { await self.run(trigger) }
     }
 
+    /// Only the newest suggestion is kept: a trigger ends the ones being
+    /// made or waiting in every other chat tool.
+    private func supersede(except active: ScreenSession?) {
+        let sessions = Array(builtInSessions.values) + Array(pluginScreens.values) + (practice.map { [$0] } ?? [])
+        for session in sessions where session !== active { session.reset(detail: "superseded") }
+        cancelWorking()
+        dropWaiting(detail: "superseded")
+        missed = nil
+    }
+
+    /// The trigger's work is still wanted. It carries on when the user moves
+    /// to another app or chat; its suggestion then waits for that chat.
     private func isCurrent(_ id: String) -> Bool {
-        if case .working(let t) = state, t.id == id, routeIsCurrent(t) { return true }
+        if case .working(let t) = state, t.id == id { return true }
         return false
     }
 
+    private func isFront(_ pid: pid_t) -> Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+    }
+
     private func cancelWorking() {
-        guard case .working = state else { return }
+        guard case .working(let t) = state else { return }
         currentCall?.cancel()
         currentCall = nil
         state = .idle
+        SuggestionActivity.shared.clear(t.id)
         overlay.hide()
     }
 
     private func fail(_ t: Trigger, _ message: String) {
         state = .idle
         currentCall = nil
-        overlay.showToast(message, input: t.input.frame, duration: 3, kind: .warning)
+        SuggestionActivity.shared.clear(t.id)
         Log.info("失败：\(message)")
+        guard routeIsCurrent(t) else {
+            // Said over the chat tool only, once the user is back there.
+            missed = (message, t.pid, t.platformID, t.input.frame, Date())
+            startWaitTimer()
+            return
+        }
+        overlay.showToast(message, input: t.input.frame, duration: 3, kind: .warning)
     }
 
     private func run(_ t: Trigger) async {
@@ -768,51 +831,75 @@ final class Controller: NSObject {
         }
 
         guard r.ok else {
-            state = .idle
-            overlay.showToast(r.friendlyError, input: snap.frame, duration: 3, kind: .warning)
+            fail(t, r.friendlyError)
             Log.info("引擎返回 \(r.errorCode ?? "error")")
             return
         }
-        if let id = r.chatID { chatCache = (hash, id, r.chatTitle ?? id) }
+        if let id = r.chatID, routeIsCurrent(t) { chatCache = (hash, id, r.chatTitle ?? id) }
 
         guard let text = r.suggestion, !text.isEmpty else {
             state = .idle
-            overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: snap.frame, duration: 1.5)
+            SuggestionActivity.shared.clear(t.id)
+            if routeIsCurrent(t) { overlay.showToast(L10n.tr("这次不建议", "No suggestion this time"), input: snap.frame, duration: 1.5) }
             return
         }
-
-        await AX.waitForStillWindow(pid: t.pid, from: snap.windowFrame)
-        guard isCurrent(t.id) else { return }
-        // Check before display: same app, same input text, same chat.
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == t.pid,
-              let now = AX.inputSnapshot(pid: t.pid), now.value == snap.value, CFEqual(now.element, snap.element) else {
-            state = .idle
-            overlay.hide()
-            feedback(t.id, "voided", chatID: r.chatID, detail: "changed_before_display")
-            return
-        }
-        let sameChat = await headerStillMatches(pid: t.pid, snap: now, hash: hash, title: r.chatTitle ?? "")
-        guard isCurrent(t.id) else { return }
-        guard sameChat, let focused = AX.inputSnapshot(pid: t.pid), focused.value == now.value,
-              CFEqual(focused.element, now.element) else {
-            state = .idle
-            overlay.showToast(L10n.tr("会话已切换，建议作废", "The chat changed. Suggestion discarded"), input: now.frame, duration: 1.5)
-            feedback(t.id, "voided", chatID: r.chatID, detail: "chat_changed_before_display")
-            return
-        }
-
-        let pending = Pending(
+        let made = Pending(
             trigger: t, text: text, mode: r.mode, chatID: r.chatID ?? "", chatTitle: r.chatTitle ?? "",
-            lastMessageID: r.lastMessageID ?? "", headerHash: hash, input: now, background: background,
+            headerHash: hash, input: snap, background: background,
             notes: r.notes, shortNotes: r.shortNotes, shownAt: Date()
         )
-        display(pending)
-        Log.info("建议已显示：\(text.count) 字，模式 \(r.mode)，总耗时 \(ms(since: t.started)) ms（截图 \(captureMS)，OCR \(ocrMS)，引擎 \(r.timing)）")
+        if routeIsCurrent(t) {
+            await AX.waitForStillWindow(pid: t.pid, from: snap.windowFrame)
+            guard isCurrent(t.id) else { return }
+        }
+        // Check before display: same app, same chat, same input text.
+        let found = await presence(made)
+        guard isCurrent(t.id) else { return }
+        switch found {
+        case .same(let now):
+            display(made.resumed(input: now, generation: routeGeneration))
+            Log.info("建议已显示：\(text.count) 字，模式 \(r.mode)，总耗时 \(ms(since: t.started)) ms（截图 \(captureMS)，OCR \(ocrMS)，引擎 \(r.timing)）")
+        case .elsewhere:
+            if routeIsCurrent(t) { overlay.hide() }
+            wait(made, reported: false)
+            Log.info("建议已生成，等回到原会话再显示")
+        case .inputChanged:
+            state = .idle
+            SuggestionActivity.shared.clear(t.id)
+            overlay.hide()
+            feedback(t.id, "voided", chatID: r.chatID, detail: "changed_before_display")
+        }
+    }
+
+    private enum Presence {
+        case same(InputSnapshot)
+        /// Another app or chat is in front.
+        case elsewhere
+        /// The chat is in front with other text in its input.
+        case inputChanged
+    }
+
+    /// Where `p`'s chat stands now. `quiet` keeps a header that differs out
+    /// of the log, for checks repeated while another chat is open.
+    private func presence(_ p: Pending, quiet: Bool = false) async -> Presence {
+        let pid = p.trigger.pid
+        guard isFront(pid), activePlatform?.id == p.trigger.platformID else { return .elsewhere }
+        guard let now = AX.inputSnapshot(pid: pid) else {
+            // Focus is outside the input box, as after a click on the
+            // messages: the chat's header tells whether it is still open,
+            // and the input it showed is assumed unchanged.
+            let same = await headerStillMatches(pid: pid, snap: p.input, hash: p.headerHash, title: p.chatTitle, quiet: quiet)
+            return same && isFront(pid) ? .same(p.input) : .elsewhere
+        }
+        guard await headerStillMatches(pid: pid, snap: now, hash: p.headerHash, title: p.chatTitle, quiet: quiet),
+              isFront(pid), let focused = AX.inputSnapshot(pid: pid), focused.value == now.value,
+              CFEqual(focused.element, now.element) else { return .elsewhere }
+        return focused.value == p.input.value ? .same(focused) : .inputChanged
     }
 
     /// Fast path: the header pixels did not change. Slow path: OCR again and
     /// look for the chat title.
-    private func headerStillMatches(pid: pid_t, snap: InputSnapshot, hash: UInt64, title: String) async -> Bool {
+    private func headerStillMatches(pid: pid_t, snap: InputSnapshot, hash: UInt64, title: String, quiet: Bool = false) async -> Bool {
         let rect = header.headerRect(input: snap.frame, window: snap.windowFrame)
         guard let image = try? await header.capture(pid: pid, windowFrame: snap.windowFrame, rect: rect) else {
             return false
@@ -823,6 +910,7 @@ final class Controller: NSObject {
             try HeaderReader.recognize(image)
         }).value) ?? []
         if TextUtil.headerMatches(lines: lines, title: title) { return true }
+        if quiet { return false }
         // Sizes only, never the text: enough to tell a blank capture from
         // other words or a name read differently.
         let lengths = lines.prefix(4).map { TextUtil.normalize($0.text).count }
@@ -836,6 +924,11 @@ final class Controller: NSObject {
     /// count each suggestion once.
     private func display(_ p: Pending, report: Bool = true) {
         guard routeIsCurrent(p.trigger) else { return }
+        SuggestionActivity.shared.clear(p.trigger.id)
+        if waiting?.pending.trigger.id == p.trigger.id {
+            // Back on screen another way, such as a parked ghost restored.
+            waiting = nil
+        }
         var asGhost = false
         if p.mode == "complete", activePlatform?.manifest?.capabilities["overlay.inline"] == true {
             parked = p
@@ -893,8 +986,32 @@ final class Controller: NSObject {
             dismiss(p, event: "dismissed", detail: "typing")
             return false
         }
-        dismiss(p, event: "dismissed", detail: "click")
+        Task { await settleClick(p) }
         return false
+    }
+
+    /// Only typing ends a suggestion. After a click it stays while its chat
+    /// and input are on screen, following a moved input box; a click that
+    /// opened another chat sets it aside until that chat is back.
+    private func settleClick(_ p: Pending) async {
+        while NSEvent.pressedMouseButtons & 1 != 0 {
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        // Let the chat app draw what the click did before looking.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        guard case .shown(let current) = state, current.trigger.id == p.trigger.id else { return }
+        let found = await presence(current, quiet: true)
+        guard case .shown(let latest) = state, latest.trigger.id == p.trigger.id else { return }
+        switch found {
+        case .same(let now):
+            if now.frame != latest.input.frame { display(latest.restored(input: now), report: false) }
+        case .elsewhere:
+            stopWatch()
+            overlay.hide()
+            wait(latest, reported: true)
+        case .inputChanged:
+            dismiss(latest, event: "dismissed", detail: "input_changed")
+        }
     }
 
     private func dismiss(_ p: Pending, event: String, detail: String) {
@@ -926,23 +1043,102 @@ final class Controller: NSObject {
             stopWatch()
             return
         }
-        guard routeIsCurrent(p.trigger), NSWorkspace.shared.frontmostApplication?.processIdentifier == p.trigger.pid else {
-            invalidate(p, reason: "app_deactivated", toast: nil)
+        guard routeIsCurrent(p.trigger), isFront(p.trigger.pid) else {
+            stopWatch()
+            overlay.hide()
+            wait(p, reported: true)
             return
         }
-        guard let now = AX.inputSnapshot(pid: p.trigger.pid) else {
-            invalidate(p, reason: "input_lost", toast: nil)
-            return
-        }
+        // Focus left the input box, after a click elsewhere in the chat:
+        // the suggestion stays where it is. It has no time limit either;
+        // only typing ends it.
+        guard let now = AX.inputSnapshot(pid: p.trigger.pid) else { return }
         if now.value != p.input.value || !CFEqual(now.element, p.input.element) {
-            invalidate(p, reason: "input_changed", toast: nil)
+            // Another chat, or other text: waiting sorts out which.
+            stopWatch()
+            overlay.hide()
+            wait(p, reported: true)
         } else if abs(now.frame.minX - p.input.frame.minX) > 1 || abs(now.frame.minY - p.input.frame.minY) > 1
                     || abs(now.frame.width - p.input.frame.width) > 1 || abs(now.frame.height - p.input.frame.height) > 1 {
             // The same input with the same text, moved or resized with its
             // window: the suggestion follows it.
             display(p.restored(input: now), report: false)
-        } else if Date().timeIntervalSince(p.shownAt) > 120 {
-            invalidate(p, reason: "timeout", toast: nil)
+        }
+    }
+
+    // MARK: - Waiting
+
+    private func wait(_ p: Pending, reported: Bool) {
+        currentCall = nil
+        state = .idle
+        waiting = (p, reported, Date())
+        SuggestionActivity.shared.set(.ready, for: p.trigger.id)
+        startWaitTimer()
+    }
+
+    private func startWaitTimer() {
+        waitTimer?.invalidate()
+        waitTimer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(waitTick),
+                                         userInfo: nil, repeats: true)
+    }
+
+    /// The wait timer stops itself once nothing waits.
+    private func dropWaiting(detail: String) {
+        guard let w = waiting else { return }
+        waiting = nil
+        SuggestionActivity.shared.clear(w.pending.trigger.id)
+        feedback(w.pending.trigger.id, "voided", chatID: w.pending.chatID, mode: w.pending.mode,
+                 suggestionLen: w.pending.text.count, detail: detail)
+    }
+
+    /// Looks for the waiting suggestion's chat only while its chat tool is
+    /// in front and nothing else is on screen.
+    @objc private func waitTick() {
+        if let m = missed {
+            if Date().timeIntervalSince(m.since) > SuggestionActivity.waitLifetime {
+                missed = nil
+            } else if isFront(m.pid), activePlatform?.id == m.platformID, case .idle = state {
+                missed = nil
+                overlay.showToast(L10n.tr("刚才的建议没生成出来：\(m.message)", "The last suggestion could not be made: \(m.message)"),
+                                  input: m.near, duration: 4, kind: .warning)
+            }
+        }
+        guard let w = waiting else {
+            if missed == nil {
+                waitTimer?.invalidate()
+                waitTimer = nil
+            }
+            return
+        }
+        if Date().timeIntervalSince(w.since) > SuggestionActivity.waitLifetime {
+            dropWaiting(detail: "expired")
+            return
+        }
+        guard isFront(w.pending.trigger.pid), activePlatform?.id == w.pending.trigger.platformID,
+              case .idle = state, !resuming, !inserting else { return }
+        resuming = true
+        Task {
+            await resume(w.pending.trigger.id)
+            resuming = false
+        }
+    }
+
+    /// Shows the waiting suggestion when its chat is in front with the same
+    /// input; drops it when the input changed. Newer messages leave it
+    /// alone: the user can ask for a new one.
+    private func resume(_ id: String) async {
+        guard let w = waiting, w.pending.trigger.id == id else { return }
+        let found = await presence(w.pending, quiet: true)
+        guard waiting?.pending.trigger.id == id, case .idle = state else { return }
+        switch found {
+        case .elsewhere:
+            break
+        case .inputChanged:
+            dropWaiting(detail: "input_changed")
+        case .same(let now):
+            waiting = nil
+            display(w.pending.resumed(input: now, generation: routeGeneration), report: !w.reported)
+            Log.info("回到原会话，显示等待中的建议")
         }
     }
 

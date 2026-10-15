@@ -268,6 +268,94 @@ struct ScreenTests {
         try file.write(to: AppConfig.configPath)
     }
 
+    @Test func nativeAndCustomReasoningControls() async {
+        let controller = makeController()
+        let cases: [(ModelProvider, String, String)] = [
+            (.anthropic, "claude-sonnet-4-6", "low"),
+            (.anthropic, "claude-sonnet-4-5", "enabled"),
+            (.gemini, "gemini-2.5-flash", "enabled"),
+            (.zhipu, "glm-5.3", "high"),
+            (.moonshot, "kimi-k3", "low"),
+            (.custom, "gateway-alias", "high"),
+        ]
+        for (index, entry) in cases.enumerated() {
+            let settings = ModelSettings(file: ConfigFile(root: [:]))
+            settings.choose(entry.0)
+            settings.model = entry.1
+            settings.apiKey = "snapshot-only-key"
+            if entry.0 == .custom {
+                settings.baseURL = "https://gateway.example/v1"
+                await settings.loadModels { _ in
+                    ["ok": true, "catalog": [["id": "gateway-alias", "capabilities": [
+                        "reasoning_supported": true, "reasoning_format": "reasoning", "effort_levels": ["low", "high"],
+                    ]], ["id": "another-model"]]]
+                }
+            }
+            settings.reconcileSpeed()
+            settings.reasoningEffort = entry.2
+            settings.thinkingBudget = 2048
+            let form = ModelForm(settings: settings, controller: controller).padding(28).background(Theme.canvas)
+            #expect(Snapshot.render(form, name: "model-form-reasoning-\(index)",
+                                    size: CGSize(width: 640, height: 1000), dark: index % 2 == 1) != nil)
+            if index == 2 || index == 3 {
+                L10n.$overrideLanguage.withValue(.english) {
+                    #expect(Snapshot.render(form, name: "model-form-reasoning-\(index)-en",
+                                            size: CGSize(width: 640, height: 1000)) != nil)
+                }
+            }
+        }
+    }
+
+    @Test func customProtocolsAndAdvancedSettingsRender() {
+        let controller = makeController()
+        let settings = ModelSettings(file: ConfigFile(root: [:]))
+        settings.choose(.custom)
+        settings.baseURL = "https://gateway.example/v1"
+        settings.model = "my-model-alias"
+        settings.extraBodyJSON = #"{"vendor_option":true}"#
+        settings.headersJSON = #"{"X-Route":"team-a"}"#
+        for apiProtocol in ModelProtocol.allCases {
+            settings.apiProtocol = apiProtocol
+            let form = ModelForm(settings: settings, controller: controller).padding(28).background(Theme.canvas)
+            #expect(Snapshot.render(form, name: "model-protocol-\(apiProtocol.rawValue)", size: CGSize(width: 640, height: 920)) != nil)
+        }
+        for dark in [false, true] {
+            let card = AdvancedModelCard(settings: settings, expanded: true).padding(28).background(Theme.canvas)
+            #expect(Snapshot.render(card, name: "model-advanced-\(dark ? "dark" : "light")", size: CGSize(width: 640, height: 670), dark: dark) != nil)
+        }
+    }
+
+    @Test func modelDropdownSupportsSelectionManualIDsAndRefreshedCatalog() async throws {
+        let settings = ModelSettings(file: ConfigFile(root: ["model": ["provider": "custom", "base_url": "https://gateway.example/v1", "model": "manual-model"]]))
+        await settings.loadModels { _ in ["ok": true, "catalog": [["id": "model-a"], ["id": "model-b"]]] }
+        let picker = EditableModelPicker(model: Binding(get: { settings.model }, set: { settings.model = $0 }), models: settings.availableModels)
+        let host = NSHostingView(rootView: picker)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 450, height: 50), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        func settleLayout() {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        settleLayout()
+        func findCombo(in view: NSView) -> NSComboBox? {
+            if let combo = view as? NSComboBox { return combo }
+            return view.subviews.lazy.compactMap { findCombo(in: $0) }.first
+        }
+        let field = try #require(findCombo(in: host))
+        #expect(field.isEditable && field.numberOfItems == 2 && field.stringValue == "manual-model")
+        field.selectItem(at: 1)
+        field.delegate?.comboBoxSelectionDidChange?(Notification(name: NSComboBox.selectionDidChangeNotification, object: field))
+        #expect(settings.model == "model-b")
+        field.stringValue = "new-unlisted-model"
+        field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+        #expect(settings.model == "new-unlisted-model")
+        await settings.loadModels { _ in ["ok": true, "catalog": [["id": "model-c"]]] }
+        host.rootView = EditableModelPicker(model: Binding(get: { settings.model }, set: { settings.model = $0 }), models: settings.availableModels)
+        settleLayout()
+        #expect(field.numberOfItems == 1 && field.itemObjectValue(at: 0) as? String == "model-c")
+        #expect(field.stringValue == "new-unlisted-model", "refreshing the list keeps a manually entered model")
+    }
+
     /// A version a background check found, at the top of the panel.
     @Test func quickPanelWithAnUpdateWaiting() {
         let model = SettingsModel(controller: makeController())
