@@ -10,6 +10,8 @@ import Vision
 /// The report holds shapes only (roles, identifiers, counts, lengths,
 /// positions), never the text, so it is safe to share. Run it as the app
 /// (`open -n -W -a Tact.app --args ...`) so its permissions apply.
+/// `--screenshot <image.png>` also saves the window as captured, text and
+/// all: only for a chat the user picked to show.
 enum AppInspector {
     struct Report: Encodable {
         var bundleID: String
@@ -26,11 +28,51 @@ enum AppInspector {
         var accessibilityAfterHitTests: Tree?
         /// With VoiceOver's switch on, which some interfaces wait for.
         var accessibilityEnhanced: Tree?
+        /// With Chromium's own switch on: Chromium and Electron apps build
+        /// their web content's tree only once asked.
+        var accessibilityManual: Tree?
         var ocr: OCRShape?
         var wechat: WeChatShape?
         var layout: LayoutShape?
         var telegram: TelegramShape?
+        /// How Tact's own reader for a built-in app reads the window.
+        var reader: ReaderShape?
         var problems: [String] = []
+    }
+
+    /// What a built-in app's reader found, in points from the window's top
+    /// left and in lengths, and whether a second capture half a second
+    /// later reads the same chat and draft, as the check before showing a
+    /// suggestion does.
+    struct ReaderShape: Encodable {
+        var found = false
+        var titleLength = 0
+        var draftLength = 0
+        var input: [Int]?
+        var typing: [Int]?
+        var anchor: [Int]?
+        var hint: [Int]?
+        var secondReadFound: Bool?
+        var secondReadAgrees: Bool?
+    }
+
+    /// A table, as native apps list messages in: its box as fractions of
+    /// the window, its row count, and its last rows' elements.
+    struct TableShape: Encodable {
+        var at: [Double]?
+        var rows: Int
+        var lastRows: [[Shape]]
+    }
+
+    /// One element within a row: its depth below the row, role, box as
+    /// fractions of the window (left, top, width, height) and text length.
+    struct Shape: Encodable {
+        var depth: Int
+        var role: String
+        var subrole: String?
+        var at: [Double]?
+        var length: Int
+        var settable = false
     }
 
     /// Any chat window's layout as separators and text positions, in
@@ -95,6 +137,7 @@ enum AppInspector {
         var input: Input?
         /// Every element, for trees small enough to read whole.
         var outline: [Node]?
+        var tables: [TableShape] = []
     }
 
     struct Node: Encodable {
@@ -151,14 +194,14 @@ enum AppInspector {
         var samples: [[String: Double]] = []
     }
 
-    static func run(bundleID: String, output: String) -> Bool {
+    static func run(bundleID: String, output: String, screenshot: String? = nil) -> Bool {
         // Screen capture needs the process's window server connection, which
         // the application object sets up; the app proper has one already.
         _ = NSApplication.shared
         var report = Report(bundleID: bundleID)
         let semaphore = DispatchSemaphore(value: 0)
         Task.detached {
-            report = await inspect(report)
+            report = await inspect(report, screenshot: screenshot)
             semaphore.signal()
         }
         semaphore.wait()
@@ -173,7 +216,7 @@ enum AppInspector {
         }
     }
 
-    private static func inspect(_ start: Report) async -> Report {
+    private static func inspect(_ start: Report, screenshot: String?) async -> Report {
         var report = start
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: report.bundleID).first else {
             report.problems.append(L10n.tr("应用没有在运行", "The app is not running"))
@@ -201,12 +244,24 @@ enum AppInspector {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             report.accessibilityEnhanced = tree(of: root)
             AXUIElementSetAttributeValue(root, enhanced, before ? kCFBooleanTrue : kCFBooleanFalse)
+            let manual = "AXManualAccessibility" as CFString
+            let manualBefore = attribute(root, manual as String) as? Bool ?? false
+            AXUIElementSetAttributeValue(root, manual, kCFBooleanTrue)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            report.accessibilityManual = tree(of: root)
+            AXUIElementSetAttributeValue(root, manual, manualBefore ? kCFBooleanTrue : kCFBooleanFalse)
         } else {
             report.problems.append(L10n.tr("没有辅助功能权限", "Accessibility access has not been granted"))
         }
         if report.screenRecordingAllowed {
             do {
                 let (image, size) = try await capture(pid: app.processIdentifier)
+                if let screenshot {
+                    guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                    try png.write(to: URL(fileURLWithPath: screenshot))
+                }
                 report.ocr = try ocrShape(image, windowSize: size)
                 report.layout = try layoutShape(image, scale: CGFloat(image.width) / max(1, size.width))
                 if report.bundleID == TelegramScreen.bundleID {
@@ -214,6 +269,9 @@ enum AppInspector {
                 }
                 if report.bundleID == WeChatScreen.bundleID {
                     report.wechat = try weChatShape(image, scale: CGFloat(image.width) / max(1, size.width))
+                }
+                if BuiltInApp.app(bundleID: report.bundleID) == .dingtalk {
+                    report.reader = try await readerShape(DingTalkAssistant(), pid: app.processIdentifier, first: image)
                 }
             } catch {
                 report.problems.append(L10n.tr("截图识别失败：\(error.localizedDescription)", "Screen recognition failed: \(error.localizedDescription)"))
@@ -336,6 +394,11 @@ enum AppInspector {
                     }
                 }
             }
+            if role == kAXTableRole, tree.tables.count < 12, let main {
+                let rows = (attribute(element, kAXRowsAttribute) as? [AXUIElement]) ?? []
+                tree.tables.append(TableShape(at: frame(of: element).map { fractions($0, in: main) }, rows: rows.count,
+                                              lastRows: rows.suffix(8).map { shapes(of: $0, in: main) }))
+            }
             let children = (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? []
             var list = list
             switch identifier {
@@ -385,6 +448,52 @@ enum AppInspector {
             tree.messages?.averageLength = Double(messageText) / Double(withText)
         }
         return tree
+    }
+
+    /// `box` as fractions of `window`: left, top, width, height.
+    private static func fractions(_ box: CGRect, in window: CGRect) -> [Double] {
+        [box.minX - window.minX, box.minY - window.minY, box.width, box.height].enumerated().map { index, value in
+            (Double(value / max(1, index % 2 == 0 ? window.width : window.height)) * 100).rounded() / 100
+        }
+    }
+
+    private static func shapes(of row: AXUIElement, in window: CGRect) -> [Shape] {
+        var shapes: [Shape] = []
+        func walk(_ element: AXUIElement, depth: Int) {
+            guard shapes.count < 40, depth < 8 else { return }
+            var settable = DarwinBoolean(false)
+            shapes.append(Shape(depth: depth, role: attribute(element, kAXRoleAttribute) as? String ?? "?",
+                                subrole: attribute(element, kAXSubroleAttribute) as? String,
+                                at: frame(of: element).map { fractions($0, in: window) },
+                                length: longestText(of: element).count,
+                                settable: AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success
+                                    && settable.boolValue))
+            for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] { walk(child, depth: depth + 1) }
+        }
+        walk(row, depth: 0)
+        return shapes
+    }
+
+    private static func readerShape<Reader: ScreenReader>(_ reader: Reader, pid: pid_t, first image: CGImage) async throws -> ReaderShape {
+        var shape = ReaderShape()
+        guard let frame = AX.windowFrame(pid: pid) else { return shape }
+        let window = ScreenWindow(pid: pid, frame: frame)
+        let scale = CGFloat(image.width) / max(1, frame.width)
+        let points = { (rect: CGRect) in [rect.minX, rect.minY, rect.width, rect.height].map { Int($0 / scale) } }
+        guard let look = try reader.look(image, scale: scale, window: window) else { return shape }
+        shape.found = true
+        shape.titleLength = look.title.count
+        shape.draftLength = look.draft.count
+        shape.input = points(look.input)
+        shape.typing = points(look.typing)
+        shape.anchor = points(look.anchor)
+        shape.hint = look.hint.map(points)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        let (again, _) = try await capture(pid: pid)
+        let second = try reader.titleAndDraft(again, scale: CGFloat(again.width) / max(1, frame.width), window: window)
+        shape.secondReadFound = second != nil
+        shape.secondReadAgrees = second.map { $0.title == look.title && $0.draft == look.draft }
+        return shape
     }
 
     private static func capture(pid: pid_t) async throws -> (CGImage, CGSize) {

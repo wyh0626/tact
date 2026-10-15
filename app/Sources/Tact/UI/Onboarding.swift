@@ -384,8 +384,8 @@ private struct ChatStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             StepTitle(eyebrow: OnboardingStep.chat.eyebrow, title: L10n.tr("添加你的聊天工具", "Add your chat app"),
-                      detail: L10n.tr("微信是内置的，打开开关就能用；其他 IM 导入它的插件，按步骤准备好再打开。也可以稍后在设置里添加。", "WeChat is built in: switch it on. For other chat apps, import their plugin, follow its setup steps, then enable it. You can also add them later in Settings."))
-            BuiltInWeChatCard(settings: settings)
+                      detail: L10n.tr("微信、钉钉是内置的，打开开关就能用；其他 IM 导入它的插件，按步骤准备好再打开。也可以稍后在设置里添加。", "WeChat and DingTalk are built in: switch them on. For other chat apps, import their plugin, follow its setup steps, then enable it. You can also add them later in Settings."))
+            BuiltInAppsSetupCard(settings: settings)
             ChatToolList(settings: settings, onAdd: add)
             if !settings.entries.isEmpty {
                 Button { add() } label: { Label(L10n.tr("再添加一个", "Add another"), systemImage: "plus") }
@@ -412,7 +412,7 @@ private struct DoneStep: View {
     init(model: OnboardingModel) { self.model = model; settings = model.platformSettings }
 
     private var hasChatTool: Bool {
-        settings.wechat || settings.entries.contains { $0.supported && $0.enabled && $0.supportsSuggestions }
+        !settings.builtIn.isEmpty || settings.entries.contains { $0.supported && $0.enabled && $0.supportsSuggestions }
     }
 
     var body: some View {

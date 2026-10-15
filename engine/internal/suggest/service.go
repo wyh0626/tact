@@ -654,6 +654,7 @@ func (s *Service) promptFor(chat adapter.Chat, msgs []adapter.Message, intent st
 		Chat:            chat,
 		Messages:        msgs,
 		ScreenLines:     screenLines,
+		ScreenApp:       screenPlatforms[s.platformID],
 		Intent:          intent,
 		Style:           s.styleFor(chat),
 		Now:             s.now(),

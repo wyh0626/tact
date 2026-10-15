@@ -102,3 +102,35 @@ func TestScreenOCREmptyReadingAndModelDecline(t *testing.T) {
 		}
 	}
 }
+
+// DingTalk's messages come through accessibility, already split by sender;
+// read off the screen instead, they are named as DingTalk's.
+func TestDingTalkIsAScreenPlatform(t *testing.T) {
+	t.Parallel()
+	svc, fa, fm, _ := newTestService(t, `{"suggestion":"收到，我来看"}`)
+	resp := svc.Handle(context.Background(), Request{Op: "suggest", PlatformID: "dingtalk", RequestID: "d1",
+		Screen: &ScreenChat{Title: "服务告警", Type: "group", Messages: []adapter.Message{
+			{Sender: "告警机器人", Text: "服务副本数为 0"},
+			{FromMe: true, Text: "在看"},
+		}}})
+	if !resp.OK || resp.PlatformID != "dingtalk" || resp.Method != "screen" {
+		t.Fatalf("dingtalk suggest = %+v", resp)
+	}
+	if prompt := fm.last[1].Content; !strings.Contains(prompt, "告警机器人：服务副本数为 0") || !strings.Contains(prompt, "我：在看") {
+		t.Fatalf("dingtalk prompt:\n%s", prompt)
+	}
+
+	svc.Handle(context.Background(), Request{Op: "suggest", PlatformID: "dingtalk", RequestID: "d2",
+		Screen: &ScreenChat{Title: "服务告警", Lines: []prompt.ScreenLine{{Text: "在看", X: .7, Y: .4, Width: .2, Height: .04}}}})
+	if system := fm.last[0].Content; !strings.Contains(system, "来自钉钉当前聊天区") || !strings.Contains(system, "右侧通常是我") {
+		t.Errorf("dingtalk read off the screen:\n%s", system)
+	}
+	svc.Handle(context.Background(), Request{Op: "suggest", PlatformID: "wechat", RequestID: "w1",
+		Screen: &ScreenChat{Title: "张三", Lines: []prompt.ScreenLine{{Text: "到了吗", X: .1, Y: .2, Width: .3, Height: .05}}}})
+	if system := fm.last[0].Content; !strings.Contains(system, "来自微信当前聊天区") {
+		t.Errorf("wechat keeps its name:\n%s", system)
+	}
+	if fa.chatsHit != 0 || fa.historyCalls() != 0 {
+		t.Fatal("a screen platform must not touch the plugin")
+	}
+}

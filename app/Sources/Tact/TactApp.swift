@@ -10,7 +10,8 @@ struct TactApp {
             exit(ViewRenderer.exportIcon(to: arguments[flag + 1], artwork: artwork) ? 0 : 1)
         }
         if let flag = arguments.firstIndex(of: "--inspect-app"), flag + 2 < arguments.count {
-            exit(AppInspector.run(bundleID: arguments[flag + 1], output: arguments[flag + 2]) ? 0 : 1)
+            let screenshot = arguments.firstIndex(of: "--screenshot").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            exit(AppInspector.run(bundleID: arguments[flag + 1], output: arguments[flag + 2], screenshot: screenshot) ? 0 : 1)
         }
         let app = NSApplication.shared
         let delegate = AppDelegate()

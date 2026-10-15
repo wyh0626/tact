@@ -299,14 +299,17 @@ struct QuickPanelView: View {
         }
     }
 
-    /// WeChat is built in: listed once it is on, or while it is installed
-    /// and could be.
-    private static let weChatInstalled = NSWorkspace.shared.urlForApplication(withBundleIdentifier: WeChatScreen.bundleID) != nil
-    private var showsWeChat: Bool { platforms.wechat || Self.weChatInstalled }
+    /// A built-in app is listed once it is on, or while it is installed and
+    /// could be.
+    private static let installed = Set(BuiltInApp.allCases.filter(\.isInstalled))
+    private var builtIns: [BuiltInApp] {
+        BuiltInApp.allCases.filter { platforms.builtIn.contains($0) || Self.installed.contains($0) }
+    }
 
-    private var weChatState: (StatusTone, String) {
-        if !platforms.wechat { return (.neutral, L10n.tr("未启用", "Disabled")) }
+    private func state(of app: BuiltInApp) -> (StatusTone, String) {
+        if !platforms.builtIn.contains(app) { return (.neutral, L10n.tr("未启用", "Disabled")) }
         if settings.permissions[.screenRecording] == false { return (.warn, L10n.tr("需要屏幕录制权限", "Needs Screen Recording access")) }
+        if app == .dingtalk { return (.ok, L10n.tr("已启用 · 辅助功能读取", "Enabled · Accessibility")) }
         return (.ok, L10n.tr("已启用 · 截图识别", "Enabled · screen recognition"))
     }
 
@@ -314,14 +317,14 @@ struct QuickPanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             Eyebrow(text: L10n.tr("聊天工具", "Chat tools")).padding(.horizontal, 4)
             Card {
-                if showsWeChat {
-                    QuickToolRow(name: L10n.tr("微信", "WeChat"), tone: weChatState.0, status: weChatState.1, enabled: platforms.wechat,
+                ForEach(Array(builtIns.enumerated()), id: \.element) { index, app in
+                    QuickToolRow(name: app.name, tone: state(of: app).0, status: state(of: app).1, enabled: platforms.builtIn.contains(app),
                                  checking: false, toggleDisabled: false,
                                  open: { actions.openSettings(.chat) },
-                                 setEnabled: { on in withAnimation(Motion.quick) { platforms.setWeChat(on) } })
-                    if !platforms.entries.isEmpty { RowDivider(inset: 46) }
+                                 setEnabled: { on in withAnimation(Motion.quick) { platforms.set(app, on: on) } })
+                    if index < builtIns.count - 1 || !platforms.entries.isEmpty { RowDivider(inset: 46) }
                 }
-                if platforms.entries.isEmpty && !showsWeChat {
+                if platforms.entries.isEmpty && builtIns.isEmpty {
                     Button { actions.openSettings(.chat) } label: {
                         HStack(spacing: 10) {
                             IconTile(symbol: "plus", size: 24)

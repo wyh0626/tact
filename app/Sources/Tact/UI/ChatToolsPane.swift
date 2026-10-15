@@ -19,7 +19,7 @@ struct ChatToolsPane: View {
                 }
             }
 
-            WeChatCard(model: model, settings: settings)
+            BuiltInAppsCard(model: model, settings: settings)
 
             ChatToolList(settings: settings, onAdd: add)
 
@@ -30,7 +30,7 @@ struct ChatToolsPane: View {
             }
 
             Card(title: L10n.tr("上下文", "Context")) {
-                SettingRow(title: L10n.tr("读取消息条数", "Recent messages"), detail: L10n.tr("插件读取的最近消息条数；微信读取当前聊天区的可见文字", "Recent messages to read through plugins; WeChat reads the text visible in the current chat"), divider: false) {
+                SettingRow(title: L10n.tr("读取消息条数", "Recent messages"), detail: L10n.tr("插件读取的最近消息条数；微信、钉钉读取当前聊天窗口里的内容", "Recent messages to read through plugins; WeChat and DingTalk read what the current chat window holds"), divider: false) {
                     Stepper(L10n.tr("\(model.historyLimit) 条", "\(model.historyLimit) messages"), value: $model.historyLimit, in: 5...50, step: 5)
                         .font(Theme.mono(12)).frame(width: 120)
                 }
@@ -46,32 +46,34 @@ struct ChatToolsPane: View {
     }
 }
 
-/// WeChat, built in: it has no plugin interface, so Tact reads its window.
-private struct WeChatCard: View {
+/// The built-in apps: no plugin interface, so Tact reads their windows.
+private struct BuiltInAppsCard: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var settings: PlatformSettings
 
     var body: some View {
         Card(title: L10n.tr("内置", "Built in")) {
-            SettingRow(title: L10n.tr("微信", "WeChat"), detail: L10n.tr("定位当前聊天区，在本机识别文字和位置，再交给所选 AI 理解并生成建议。", "Finds the current chat area and recognizes text and positions on your Mac, then sends the text to your selected AI for suggestions. ")
-                       + L10n.tr("只读取窗口内可见内容，可以先开测试模式检查识别范围。", "Only visible window content is read. Use test mode to check the captured area first."), divider: settings.wechat) {
-                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { settings.wechat }, set: { settings.setWeChat($0) }))
-                    .labelsHidden().toggleStyle(.switch)
+            ForEach(Array(BuiltInApp.allCases.enumerated()), id: \.element) { index, app in
+                SettingRow(title: app.name, detail: app.detail,
+                           divider: index < BuiltInApp.allCases.count - 1 || !settings.builtIn.isEmpty) {
+                    Toggle(app.name, isOn: Binding(get: { settings.builtIn.contains(app) }, set: { settings.set(app, on: $0) }))
+                        .labelsHidden().toggleStyle(.switch)
+                }
             }
-            if settings.wechat {
+            if !settings.builtIn.isEmpty {
                 if model.permissions[.screenRecording] == false {
                     SettingRow(title: L10n.tr("需要屏幕录制权限", "Screen recording permission required"), detail: L10n.tr("在系统设置里打开 Tact 的屏幕录制，然后重新打开 Tact", "Allow Tact to record the screen in System Settings, then reopen Tact")) {
                         Button(L10n.tr("打开系统设置", "Open System Settings")) { Permission.screenRecording.openSystemSettings() }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
-                SettingRow(title: L10n.tr("测试模式", "Test mode"), detail: L10n.tr("在微信里按快捷键，只显示本机识别的画面文字，不调用 AI", "Press the shortcut in WeChat to preview locally recognized text without calling AI"), divider: false) {
+                SettingRow(title: L10n.tr("测试模式", "Test mode"), detail: L10n.tr("在已打开的应用里按快捷键，只显示本机读到的内容，不调用 AI", "Press the shortcut in an app switched on here to preview what Tact read, without calling AI"), divider: false) {
                     Toggle(L10n.tr("测试模式", "Test mode"), isOn: Binding(get: { settings.ocrTestMode }, set: { settings.setOCRTestMode($0) }))
                         .labelsHidden().toggleStyle(.switch)
                 }
             }
         }
-        .animation(Motion.spring, value: settings.wechat)
+        .animation(Motion.spring, value: settings.builtIn)
     }
 }
 

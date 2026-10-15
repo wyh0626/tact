@@ -34,6 +34,7 @@ The interface language does not overwrite your writing preferences or change the
 | App | Integration | Status |
 | --- | --- | --- |
 | WeChat | Built in; recognizes the visible chat window locally | Available |
+| DingTalk | Built in; reads the open chat, its messages and the input through Accessibility, or recognizes the window when that fails. No admin approval needed | Available |
 | Telegram | Optional plugin; reads recent messages through the official API | Experimental |
 | Other apps | Import a plugin built with the [adapter specification](docs/ADAPTER.md) | Depends on the plugin |
 

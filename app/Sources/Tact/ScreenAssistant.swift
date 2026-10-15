@@ -23,8 +23,16 @@ struct ScreenLook<Context: Sendable>: Sendable {
     var draftClipped = false
 }
 
-/// How to read one chat app's window, for apps that offer neither
-/// accessibility nor a way to read their input box.
+/// The window a capture was taken of, for readers that also ask the app's
+/// accessibility tree.
+struct ScreenWindow: Sendable {
+    let pid: pid_t
+    /// Accessibility coordinates: global points, top-left origin.
+    let frame: CGRect
+}
+
+/// How to read one chat app's window, for apps whose input box Tact cannot
+/// work through accessibility alone.
 protocol ScreenReader: Sendable {
     associatedtype Context: Sendable
     /// The app's name, in what the user is told.
@@ -35,6 +43,9 @@ protocol ScreenReader: Sendable {
     func look(_ image: CGImage, scale: CGFloat) throws -> ScreenLook<Context>?
     /// The title and draft a fresh capture shows, to check a look still holds.
     func titleAndDraft(_ image: CGImage, scale: CGFloat) throws -> (title: String, draft: String)?
+    /// The same, for readers that ask the app's accessibility tree first.
+    func look(_ image: CGImage, scale: CGFloat, window: ScreenWindow) throws -> ScreenLook<Context>?
+    func titleAndDraft(_ image: CGImage, scale: CGFloat, window: ScreenWindow) throws -> (title: String, draft: String)?
     /// Whether the look holds anything to suggest from.
     func hasContent(_ look: ScreenLook<Context>) -> Bool
     func payload(id: String, platformID: String, look: ScreenLook<Context>) -> [String: Any]
@@ -47,6 +58,14 @@ protocol ScreenReader: Sendable {
 
 extension ScreenReader {
     func resolvePayload(id: String, platformID: String, look: ScreenLook<Context>) -> [String: Any]? { nil }
+
+    func look(_ image: CGImage, scale: CGFloat, window: ScreenWindow) throws -> ScreenLook<Context>? {
+        try look(image, scale: scale)
+    }
+
+    func titleAndDraft(_ image: CGImage, scale: CGFloat, window: ScreenWindow) throws -> (title: String, draft: String)? {
+        try titleAndDraft(image, scale: scale)
+    }
 }
 
 /// The keyboard side of a screen assistant, for the controller.
@@ -290,7 +309,8 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let image = try await capture.captureWindow(pid: pid, windowFrame: window)
         let scale = CGFloat(image.width) / max(1, window.width)
         let reader = reader
-        let found = try await Task.detached(priority: .userInitiated) { try reader.look(image, scale: scale) }.value
+        let screen = ScreenWindow(pid: pid, frame: window)
+        let found = try await Self.offPool { try reader.look(image, scale: scale, window: screen) }
         guard let found else { throw ScreenError.notAChat(reader.name) }
         return View(pid: pid, window: window, scale: scale, look: found)
     }
@@ -333,7 +353,18 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         guard let image = try? await capture.captureWindow(pid: view.pid, windowFrame: view.window) else { return nil }
         let scale = CGFloat(image.width) / max(1, view.window.width)
         let reader = reader
-        return try? await Task.detached(priority: .userInitiated) { try reader.titleAndDraft(image, scale: scale) }.value
+        let screen = ScreenWindow(pid: view.pid, frame: view.window)
+        return try? await Self.offPool { try reader.titleAndDraft(image, scale: scale, window: screen) }
+    }
+
+    /// Reading a window blocks, on Vision and on the app's accessibility
+    /// replies. It runs on a dispatch queue rather than one of Swift's few
+    /// cooperative threads: Vision's text recognizer needs one of those
+    /// free to finish.
+    private static func offPool<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(with: Result { try work() }) }
+        }
     }
 
     // MARK: - Shown

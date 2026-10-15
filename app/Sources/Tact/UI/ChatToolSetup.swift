@@ -190,19 +190,28 @@ final class AddChatToolModel: ObservableObject, Identifiable {
 
 /// The add sheet: drop a plugin in, see what's added and what's coming,
 /// and, without a plugin, a message to hand to whoever can write one.
-/// WeChat is built in: it is switched on, not imported, so it sits apart
-/// from plugins wherever chat tools are added.
-struct BuiltInWeChatCard: View {
+/// The built-in apps are switched on, not imported, so they sit apart from
+/// plugins wherever chat tools are added.
+struct BuiltInAppsSetupCard: View {
     @ObservedObject var settings: PlatformSettings
 
     var body: some View {
         Card(title: L10n.tr("内置 · 不需要插件", "Built in · No plugin needed")) {
-            SettingRow(title: L10n.tr("微信", "WeChat"),
-                       detail: L10n.tr("在本机截图识别当前聊天和输入框，打开开关就能用。", "Reads the open chat and input box from the screen on your Mac. Switch it on to use it."),
-                       divider: false) {
-                Toggle(L10n.tr("微信", "WeChat"), isOn: Binding(get: { settings.wechat }, set: { settings.setWeChat($0) }))
-                    .labelsHidden().toggleStyle(.switch)
+            ForEach(Array(BuiltInApp.allCases.enumerated()), id: \.element) { index, app in
+                SettingRow(title: app.name, detail: Self.detail(app), divider: index < BuiltInApp.allCases.count - 1) {
+                    Toggle(app.name, isOn: Binding(get: { settings.builtIn.contains(app) }, set: { settings.set(app, on: $0) }))
+                        .labelsHidden().toggleStyle(.switch)
+                }
             }
+        }
+    }
+
+    private static func detail(_ app: BuiltInApp) -> String {
+        switch app {
+        case .wechat:
+            return L10n.tr("在本机截图识别当前聊天和输入框，打开开关就能用。", "Reads the open chat and input box from the screen on your Mac. Switch it on to use it.")
+        case .dingtalk:
+            return L10n.tr("通过辅助功能读取当前聊天和输入框，打开开关就能用。", "Reads the open chat and input box through Accessibility. Switch it on to use it.")
         }
     }
 }
@@ -228,7 +237,7 @@ struct AddChatToolSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    BuiltInWeChatCard(settings: settings)
+                    BuiltInAppsSetupCard(settings: settings)
                     VStack(alignment: .leading, spacing: 8) {
                         dropZone
                         Text(L10n.tr("导入只检查文件，不会运行插件；打开开关时才会先检测连接。", "Import only checks files. The plugin runs for a connection check when you enable it."))

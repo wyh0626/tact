@@ -18,8 +18,9 @@ struct AppConfig {
     var ghostOffsetY: Double = 0
     var requestTimeout: Double = 25
     var debugSaveHeader = false
-    /// Suggestions in WeChat, read off the screen.
-    var wechat = false
+    /// Built-in chat apps switched on: read off the screen or through
+    /// accessibility, without a plugin.
+    var builtIn: Set<BuiltInApp> = []
     /// Environment variable the engine reads the model key from; the app
     /// fills it from the keychain when it starts the engine.
     var apiKeyEnv = ""
@@ -119,7 +120,7 @@ struct AppConfig {
         }
         if let v = app["request_timeout_seconds"] as? NSNumber { cfg.requestTimeout = v.doubleValue }
         if let v = app["debug_save_header"] as? Bool { cfg.debugSaveHeader = v }
-        if let v = app["wechat"] as? Bool { cfg.wechat = v }
+        cfg.builtIn = Set(BuiltInApp.allCases.filter { app[$0.rawValue] as? Bool == true })
         cfg.socketPath = expand(cfg.socketPath)
         cfg.platformRegistry = PlatformRegistry(file: ConfigFile(root: root))
         return (cfg, problem)

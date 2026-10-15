@@ -21,9 +21,10 @@ final class Controller: NSObject {
     private var requestPlatforms: [String: String] = [:]
     private var runtimeConfig: AppConfig { activePlatform?.runtimeConfig(from: config) ?? config }
 
-    private lazy var wechat = makeScreenAssistant(WeChatAssistant(), platformID: WeChatAssistant.platformID)
-    /// WeChat is in front and turned on: it has the keyboard instead of a plugin.
-    private var weChatActive = false
+    /// The built-in apps' assistants, made the first time each comes to the front.
+    private var builtInSessions: [BuiltInApp: ScreenSession] = [:]
+    /// A built-in app is in front and turned on: it has the keyboard instead of a plugin.
+    private var builtInActive: BuiltInApp?
     /// The assistant of a plugin whose app is read off the screen, while that
     /// plugin's app is in front.
     private var pluginScreen: (id: String, session: ScreenSession)?
@@ -31,10 +32,11 @@ final class Controller: NSObject {
     private weak var practice: PracticeChat?
     /// The practice chat is on screen and Tact is in front.
     private var practiceActive = false
-    /// The session that has the keyboard: the practice chat, WeChat's or a plugin's.
+    /// The session that has the keyboard: the practice chat, a built-in app's or a plugin's.
     private var activeScreen: ScreenSession? {
         if practiceActive, let practice { return practice }
-        return weChatActive ? wechat : pluginScreen?.session
+        if let builtInActive { return session(for: builtInActive) }
+        return pluginScreen?.session
     }
 
     private(set) var hotKey: HotKey?
@@ -153,6 +155,17 @@ final class Controller: NSObject {
         return assistant
     }
 
+    private func session(for app: BuiltInApp) -> ScreenSession {
+        if let session = builtInSessions[app] { return session }
+        let session: ScreenSession
+        switch app {
+        case .wechat: session = makeScreenAssistant(WeChatAssistant(), platformID: app.platformID)
+        case .dingtalk: session = makeScreenAssistant(DingTalkAssistant(), platformID: app.platformID)
+        }
+        builtInSessions[app] = session
+        return session
+    }
+
     /// A plugin whose desktop is read off the screen gets the assistant for
     /// its app; only apps Tact has reading rules for can be.
     private func screenSession(for platform: PlatformRegistration, bundleID: String?) -> ScreenSession? {
@@ -265,7 +278,7 @@ final class Controller: NSObject {
     /// Switching instances retires all UI and asynchronous cache work.
     private func resetPlatformState() {
         routeGeneration += 1
-        wechat.reset(detail: "platform_changed")
+        builtInSessions.values.forEach { $0.reset(detail: "platform_changed") }
         pluginScreen?.session.reset(detail: "platform_changed")
         pluginScreen = nil
         if case .shown(let pending) = state { invalidate(pending, reason: "platform_changed", toast: nil) }
@@ -295,10 +308,10 @@ final class Controller: NSObject {
         let practiceFront = practice != nil && frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
         if practiceActive && !practiceFront { practice?.reset(detail: "app_deactivated") }
         practiceActive = practiceFront
-        let weChatFront = config.wechat && frontmost?.bundleIdentifier == WeChatScreen.bundleID
-        if weChatActive && !weChatFront { wechat.reset() }
-        weChatActive = weChatFront
-        let match = weChatFront ? nil : config.platformRegistry.match(bundleID: frontmost?.bundleIdentifier)
+        let builtInFront = BuiltInApp.app(bundleID: frontmost?.bundleIdentifier).flatMap { config.builtIn.contains($0) ? $0 : nil }
+        if let active = builtInActive, active != builtInFront { builtInSessions[active]?.reset(detail: "app_deactivated") }
+        builtInActive = builtInFront
+        let match = builtInFront != nil ? nil : config.platformRegistry.match(bundleID: frontmost?.bundleIdentifier)
         if activePlatform?.id != match?.id {
             resetPlatformState()
             activePlatform = match
@@ -307,7 +320,7 @@ final class Controller: NSObject {
             pluginScreen = (match.id, session)
         }
         header.config = runtimeConfig
-        let inChat = practiceFront || weChatFront || match != nil && match?.manifest?.capabilities["composer.read"] == true
+        let inChat = practiceFront || builtInFront != nil || match != nil && match?.manifest?.capabilities["composer.read"] == true
             && match?.manifest?.capabilities["composer.apply"] == true
         keyTap.setEnabled(inChat)
         if !inChat {

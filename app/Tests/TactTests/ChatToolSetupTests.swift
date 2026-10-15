@@ -131,7 +131,7 @@ struct ChatToolSetupTests {
     @Test func plannedPlatformsAreListedButNeverEntries() async throws {
         try await withFixture { _, settings, configURL, _, _ in
             let original = try Data(contentsOf: configURL)
-            #expect(PlatformSettings.planned.map(\.name) == [L10n.tr("钉钉", "DingTalk"), L10n.tr("飞书", "Lark"), "Slack", "Discord"])
+            #expect(PlatformSettings.planned.map(\.name) == [L10n.tr("飞书", "Lark"), "Slack", "Discord"])
             for platform in PlatformSettings.planned {
                 settings.select(platform.id)
                 #expect(settings.selectedID == nil)

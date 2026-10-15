@@ -32,9 +32,11 @@ const systemPrompt = `你是聊天回复助手，替用户（下面称"我"）�
 {"suggestion": "要发出的文字，或者 null", "commits": 建议里是否包含时间、结果等承诺（true/false）, "needs_check": 建议是否用到了聊天记录里没有的事实（true/false）}`
 
 type Input struct {
-	Chat            adapter.Chat
-	Messages        []adapter.Message
-	ScreenLines     []ScreenLine
+	Chat        adapter.Chat
+	Messages    []adapter.Message
+	ScreenLines []ScreenLine
+	// ScreenApp names the app the screen lines were read from.
+	ScreenApp       string
 	Intent          string
 	Style           string
 	Now             time.Time
@@ -55,7 +57,7 @@ type ScreenLine struct {
 
 const screenInstructions = `
 
-本次上下文来自微信当前聊天区的本机 OCR，尚未划分消息或发送人。
+本次上下文来自%s当前聊天区的本机 OCR，尚未划分消息或发送人。
 1. 每段文字带 x、y、width、height，范围为 0 到 1，原点在聊天区左上角；按位置理解阅读顺序，把同一条消息的换行和片段合起来。
 2. 结合左右对齐和邻近的昵称判断谁在说话：右侧通常是我，左侧通常是对方；群聊昵称通常位于消息上方。长消息、引用和居中文字不能只凭单个坐标判断。
 3. 时间、系统提示、界面按钮和头像中的文字不是用户消息；不要把群成员名字单独当成一句消息，也不要把对方的话当成我的意图。
@@ -76,7 +78,11 @@ func IsLongDraft(draft string) bool { return utf8.RuneCountInString(draft) >= Lo
 func Build(in Input) []model.Message {
 	system := systemPrompt
 	if in.ScreenLines != nil {
-		system += screenInstructions
+		app := in.ScreenApp
+		if app == "" {
+			app = "微信"
+		}
+		system += fmt.Sprintf(screenInstructions, app)
 	}
 	if s := strings.TrimSpace(in.Style); s != "" {
 		system += "\n\n我的表达偏好：\n" + s

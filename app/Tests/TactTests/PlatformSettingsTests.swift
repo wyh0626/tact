@@ -26,6 +26,19 @@ struct PlatformSettingsTests {
         }
     }
 
+    /// DingTalk is switched on like WeChat, on its own key.
+    @Test func dingTalkIsSwitchedOnWithoutAPlugin() async throws {
+        try await withFixture { settings, configURL, _, _ in
+            settings.set(.dingtalk, on: true)
+            #expect(settings.builtIn == [.dingtalk] && !settings.wechat && settings.entries.isEmpty)
+            let on = try ConfigFile.load(from: configURL.path)
+            #expect(on.bool("app.dingtalk") == true && on.bool("app.wechat") == nil)
+            settings.set(.dingtalk, on: false)
+            #expect(settings.builtIn.isEmpty)
+            #expect(try ConfigFile.load(from: configURL.path).bool("app.dingtalk") == false)
+        }
+    }
+
     @Test func onboardingStepsAreNumberedAsInTheirList() {
         L10n.$overrideLanguage.withValue(.simplifiedChinese) {
             #expect(OnboardingStep.permissions.eyebrow == "02 · 授权")

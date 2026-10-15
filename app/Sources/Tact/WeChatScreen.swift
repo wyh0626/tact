@@ -264,16 +264,8 @@ enum WeChatScreen {
     static func readForModel(_ lines: [Line], layout: Layout) -> Reading {
         let header = lines.filter { layout.header.contains(CGPoint(x: $0.box.midX, y: $0.box.midY)) }
         let (title, group) = title(from: header, in: layout.header)
-        let area = layout.messages
-        let blocks = lines.compactMap { line -> TextBlock? in
-            guard area.contains(CGPoint(x: line.box.midX, y: line.box.midY)) else { return nil }
-            let box = line.box.intersection(area)
-            guard !box.isEmpty, box.width > 0, box.height > 0 else { return nil }
-            return TextBlock(text: line.text, x: Double((box.minX - area.minX) / area.width),
-                             y: Double((box.minY - area.minY) / area.height),
-                             width: Double(box.width / area.width), height: Double(box.height / area.height))
-        }.sorted { ($0.y, $0.x) < ($1.y, $1.x) }
-        return Reading(title: title, isGroup: group, draft: draft(from: lines, in: layout.typing), rawLines: blocks)
+        return Reading(title: title, isGroup: group, draft: draft(from: lines, in: layout.typing),
+                       rawLines: ChatOCR.blocks(lines, in: layout.messages))
     }
 
     /// Pieces of one line of text that OCR returned separately (around an

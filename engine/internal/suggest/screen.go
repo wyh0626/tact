@@ -17,8 +17,9 @@ import (
 const PracticePlatformID = "practice"
 
 // Built-in platforms whose messages the app sends with each request: chat
-// apps read off the screen (WeChat), and the practice chat.
-var screenPlatforms = map[string]string{"wechat": "微信", PracticePlatformID: "练习"}
+// apps read off the screen or through accessibility (WeChat, DingTalk),
+// and the practice chat.
+var screenPlatforms = map[string]string{"wechat": "微信", "dingtalk": "钉钉", PracticePlatformID: "练习"}
 
 // Bounds on what a request may carry: a window shows far fewer messages.
 const (

@@ -24,10 +24,10 @@ struct PlannedPlatform: Identifiable {
 
 @MainActor
 final class PlatformSettings: ObservableObject {
-    /// WeChat is built in (see WeChatAssistant) and Telegram has a plugin
-    /// (plugins/telegram), so neither is here.
-    static var planned: [PlannedPlatform] { [PlannedPlatform(id: "dingtalk", name: L10n.tr("钉钉", "DingTalk")), .init(id: "feishu", name: L10n.tr("飞书", "Lark")),
-                          .init(id: "slack", name: "Slack"), .init(id: "discord", name: "Discord")] }
+    /// WeChat and DingTalk are built in (see BuiltInApp) and Telegram has a
+    /// plugin (plugins/telegram), so none is here.
+    static var planned: [PlannedPlatform] { [PlannedPlatform(id: "feishu", name: L10n.tr("飞书", "Lark")),
+                                             .init(id: "slack", name: "Slack"), .init(id: "discord", name: "Discord")] }
 
     @Published private(set) var entries: [PlatformEntry] = []
     @Published var selectedID: String?
@@ -42,8 +42,9 @@ final class PlatformSettings: ObservableObject {
     @Published var headerTopOffset: Double = 28
     @Published var headerHeight: Double = 64
     @Published private(set) var ocrTestMode: Bool
-    /// WeChat is built in: switched on, never imported.
-    @Published private(set) var wechat: Bool
+    /// Built-in chat apps switched on; never imported.
+    @Published private(set) var builtIn: Set<BuiltInApp>
+    var wechat: Bool { builtIn.contains(.wechat) }
 
     private let controller: Controller
     private let configPath: String
@@ -81,7 +82,7 @@ final class PlatformSettings: ObservableObject {
         self.controller = controller
         self.configPath = configPath
         ocrTestMode = controller.ocrTestMode
-        wechat = file.bool("app.wechat") ?? false
+        builtIn = Set(BuiltInApp.allCases.filter { file.bool($0.configKey) == true })
         registry = PlatformRegistry(file: file, configPath: configPath)
         rebuild()
         if let first = entries.first { loadDesktop(for: first.id) }
@@ -178,12 +179,16 @@ final class PlatformSettings: ObservableObject {
     }
 
     func setWeChat(_ on: Bool) {
+        set(.wechat, on: on)
+    }
+
+    func set(_ app: BuiltInApp, on: Bool) {
         if on && !Permission.screenRecording.isGranted { Permission.screenRecording.request() }
         do {
             var file = try ConfigFile.load(from: configPath)
-            file.set("app.wechat", on)
+            file.set(app.configKey, on)
             try file.write(to: configPath)
-            wechat = on
+            if on { builtIn.insert(app) } else { builtIn.remove(app) }
             problem = nil
             if configPath == AppConfig.configPath { controller.apply(AppConfig.load().0) }
         } catch {
