@@ -186,4 +186,19 @@ struct BuiltInAppTests {
         #expect(ChatOCR.isFaint(box(10), pixels: pixels))
         #expect(!ChatOCR.isFaint(box(100), pixels: pixels))
     }
+
+    /// Once the box has focus DingTalk hides its hint, so a ghost for an
+    /// empty box starts where DingTalk starts text, not at a generic inset.
+    @Test func anEmptyFocusedBoxStartsWhereDingTalkWrites() {
+        let input = CGRect(x: 762, y: 952, width: 1188, height: 552)
+        let empty = ChatOCR.composer([], in: input, scale: 2, emptyStart: DingTalkAssistant.emptyStart,
+                                     isHint: DingTalkOCR.isHint)
+        #expect(empty.hint == nil && empty.draft.isEmpty)
+        #expect(empty.anchor.minX == input.minX + 40 && empty.anchor.minY == input.minY + 16)
+        let hint = WeChatScreen.Line(text: "请输入消息", box: CGRect(x: 804, y: 968, width: 140, height: 28))
+        let unfocused = ChatOCR.composer([hint], in: input, scale: 2, emptyStart: DingTalkAssistant.emptyStart,
+                                         isHint: DingTalkOCR.isHint)
+        #expect(unfocused.hint == hint.box && unfocused.anchor.minX == hint.box.minX, "the hint, when shown, says where text starts")
+    }
 }
+

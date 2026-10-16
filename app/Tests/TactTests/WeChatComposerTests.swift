@@ -83,27 +83,6 @@ struct WeChatComposerTests {
         #expect((screen["lines"] as? [[String: Any]])?.count == 12)
     }
 
-    @Test @MainActor func workingDotsFollowTheAnchorAndOffset() {
-        let caret = CGRect(x: 316, y: 484, width: 1, height: 18)
-        let frame = Overlay.workingFrame(caret: caret, input: input, fontSize: 13, offset: CGPoint(x: 2, y: -1))
-        #expect(frame.minX == 321 && frame.midY == 492)
-        #expect(frame.maxY < input.midY)
-        let fallback = Overlay.workingFrame(caret: nil, input: input, fontSize: 13)
-        #expect(fallback.midY == input.midY)
-    }
-
-    /// Some apps report the caret of an empty input above the box.
-    @Test @MainActor func workingDotsStayOnTheInputWhenTheCaretIsOutsideIt() {
-        let oneLine = CGRect(x: 300, y: 560, width: 600, height: 20)
-        for caretY in [CGFloat(530), 600] {
-            let caret = CGRect(x: 302, y: caretY, width: 1, height: 16)
-            let frame = Overlay.workingFrame(caret: caret, input: oneLine, fontSize: 13)
-            #expect(frame.midY == oneLine.midY && frame.minX == 305)
-        }
-        let edge = Overlay.workingFrame(caret: CGRect(x: 302, y: 560, width: 1, height: 2), input: oneLine, fontSize: 13)
-        #expect(edge.minY >= oneLine.minY && edge.maxY <= oneLine.maxY)
-    }
-
     /// The overlay steps aside while its window is dragged and comes back
     /// once the window is let go and still; a resize ends it.
     @Test func theOverlayWaitsOutADrag() {

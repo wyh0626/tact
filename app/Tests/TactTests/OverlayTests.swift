@@ -39,7 +39,10 @@ struct OverlayTests {
     }
 
     @Test func workingIndicator() {
-        #expect(render("overlay-working", aboveInput: false) { $0.showWorking(caret: nil, input: input, fontSize: 13) })
+        #expect(render("overlay-working", aboveInput: true) { $0.showWorking(input: input, step: .reading) })
+        #expect(render("overlay-working-long", aboveInput: true, dark: true) {
+            $0.showWorking(input: input, step: .writing, started: Date().addingTimeInterval(-8))
+        })
     }
 
     @Test func toasts() {
@@ -55,6 +58,12 @@ struct OverlayTests {
         #expect(render("overlay-card", aboveInput: true) {
             $0.showBubble("这个还卡在 AUDIT 的单子，你那边能手动处理吗？我这边先把日志整理好发你",
                           notes: ["含承诺，发出前确认"], input: input, fontSize: 13, rewrite: true)
+        })
+        #expect(render("overlay-card-dark", aboveInput: true, dark: true) {
+            $0.showBubble("好的，周六晚上六点半见，我叫上阿杰一起", notes: [], input: input, fontSize: 13, rewrite: false)
+        })
+        #expect(render("overlay-card-copy-only", aboveInput: true) {
+            $0.showBubble("今天处理不了这个问题，请先联系值班同事", notes: [], input: input, fontSize: 13, rewrite: true, copyOnly: true)
         })
     }
 }

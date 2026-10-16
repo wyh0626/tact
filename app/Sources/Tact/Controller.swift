@@ -688,8 +688,7 @@ final class Controller: NSObject {
         requestPlatforms[trigger.id] = platform.id
         state = .working(trigger)
         SuggestionActivity.shared.set(.generating, for: trigger.id)
-        overlay.showWorking(caret: snap.caret, input: snap.frame, fontSize: CGFloat(runtimeConfig.ghostFontSize),
-                            offset: CGPoint(x: runtimeConfig.ghostOffsetX, y: runtimeConfig.ghostOffsetY))
+        overlay.showWorking(input: snap.frame, step: .reading, started: trigger.started)
         overlay.follow(pid: trigger.pid, frame: snap.windowFrame)
         Task { await self.run(trigger) }
     }
@@ -801,6 +800,7 @@ final class Controller: NSObject {
             payload["ocr_lines"] = lines.map { line -> [String: Any] in ["text": line.text, "height": line.height] }
         }
 
+        if routeIsCurrent(t) { overlay.updateWorking(.writing) }
         let token = EngineCall()
         currentCall = token
         let raw: [String: Any]
@@ -970,6 +970,10 @@ final class Controller: NSObject {
         if let session = activeScreen { return session.handle(type: type, event: event) }
         noteActivity(type: type, event: event)
         if type == .keyDown, isSendKey(event) { noteSend() }
+        if type == .keyDown, case .working = state, event.getIntegerValueField(.keyboardEventKeycode) == 53 { // Esc
+            cancelWorking()
+            return true
+        }
         guard case .shown(let p) = state else { return false }
         if type == .keyDown {
             let code = event.getIntegerValueField(.keyboardEventKeycode)

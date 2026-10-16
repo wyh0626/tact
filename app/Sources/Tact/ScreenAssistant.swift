@@ -211,6 +211,9 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
     /// A click landed on the window since the hotkey, to drag it say, and
     /// may have taken the keyboard from the input box.
     private var windowClicked = false
+    /// The last look at a window: where its input box was, so the next
+    /// hotkey on the same window says something before the window is read.
+    private var lastView: View?
     private static var fontSize: CGFloat { 13 }
 
     init(reader: Reader, platformID: String, overlay: Overlay, desk: ScreenDesk,
@@ -270,6 +273,9 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
 
     private func run(id: String, pid: pid_t, window: CGRect, started: Date) async {
         SuggestionActivity.shared.set(.generating, for: id)
+        if isFront(pid), let last = lastView, last.pid == pid, last.window == window {
+            overlay.showWorking(input: last.inputFrame, step: .reading, started: started)
+        }
         let view: View
         do {
             view = try await look(pid: pid, window: window)
@@ -279,6 +285,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             return
         }
         guard isCurrent(id) else { return }
+        lastView = view
         Log.info("\(reader.name)：读完画面，用时 \(ms(since: started)) ms")
         if testMode() {
             var summary = reader.summary(view.look)
@@ -299,7 +306,7 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
             return
         }
         if isFront(pid) {
-            overlay.showWorking(caret: view.anchorFrame, input: view.inputFrame, fontSize: Self.fontSize)
+            overlay.showWorking(input: view.inputFrame, step: .writing, started: started)
             // A resize hides the working pixels; the suggestion is placed on
             // the window as it is once ready.
             overlay.follow(pid: view.pid, frame: view.window)
@@ -367,8 +374,8 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let asGhost = shown.mode == "complete" && showGhost(shown.text, tags: shown.shortNotes, in: now)
         if !asGhost {
             let copyOnly = shown.mode == "rewrite" && now.look.draftClipped
-            overlay.showBubble(shown.text, notes: shown.notes, input: now.inputFrame, fontSize: Self.fontSize, rewrite: shown.mode == "rewrite",
-                               footer: copyOnly ? L10n.tr("草稿可能没读全  ·  TAB 复制  ·  ESC 取消", "Draft may be incomplete  ·  TAB Copy  ·  ESC Cancel") : nil)
+            overlay.showBubble(shown.text, notes: shown.notes, input: now.inputFrame, fontSize: Self.fontSize,
+                               rewrite: shown.mode == "rewrite", copyOnly: copyOnly)
         }
         stopWaitTimer()
         state = .shown(shown)
@@ -390,8 +397,11 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
         let color = view.look.composer
         let background = NSColor(srgbRed: CGFloat(color.r) / 255, green: CGFloat(color.g) / 255,
                                  blue: CGFloat(color.b) / 255, alpha: 1)
+        // The box's colour goes under the ghost only to hide a hint. With
+        // no hint showing the ghost is drawn straight on the box, which no
+        // sampled colour can match as well.
         switch overlay.showGhost(text, tags: tags, caret: anchor, input: view.typingFrame, fontSize: reader.ghostFontSize,
-                                 background: background, cover: cover) {
+                                 background: view.look.hint == nil ? nil : background, cover: cover) {
         case .shown:
             return true
         case .tooWide, .tooTall:
@@ -469,6 +479,10 @@ final class ScreenAssistant<Reader: ScreenReader>: ScreenSession {
 
     func handle(type: CGEventType, event: CGEvent) -> Bool {
         if type != .keyDown { windowClicked = true }
+        if type == .keyDown, case .working = state, event.getIntegerValueField(.keyboardEventKeycode) == 53 { // Esc
+            reset(detail: "esc")
+            return true
+        }
         guard case .shown(let shown) = state else { return false }
         if type == .keyDown {
             let code = event.getIntegerValueField(.keyboardEventKeycode)

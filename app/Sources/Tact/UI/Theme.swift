@@ -6,8 +6,6 @@ import SwiftUI
 /// shown with a coloured dot, never a coloured bar. Colours adapt to light
 /// and dark appearance.
 enum Theme {
-    /// The brand cobalt, fixed for the dithered art and the caret pixels.
-    static let accentNS = NSColor(srgbRed: 0.247, green: 0.420, blue: 1.0, alpha: 1)
     static let warnNS = dynamicNS(light: (0.706, 0.325, 0.035), dark: (0.949, 0.710, 0.267))
     static let surfaceNS = dynamicNS(light: (1, 1, 1), dark: (0.137, 0.137, 0.153))
     static let hairlineNS = dynamicNS(light: (0.890, 0.890, 0.910), dark: (0.200, 0.200, 0.224))

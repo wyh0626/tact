@@ -1,5 +1,5 @@
 import AppKit
-import QuartzCore
+import SwiftUI
 
 /// A borderless, click-through panel that floats over the chat tool. It shows the
 /// suggestion as grey text right after the caret ("ghost"), as a card above
@@ -14,17 +14,10 @@ final class Overlay: NSObject {
     private let panel: NSPanel
     private let container: NSView
     private let label: NSTextField
-    /// Layers drawn for the current mode (working pixels, status marker);
-    /// removed whenever the overlay switches mode.
-    private var decorations: [CALayer] = []
-    /// While working: when it began, and the pixels' size, for the time
-    /// shown beside them once it runs long.
-    private var working: (started: Date, fontSize: CGFloat, pixelsWidth: CGFloat)?
-    private var elapsedTimer: Timer?
-    private var elapsedChip: CALayer?
-    /// A slow model reads as stuck without a sign of time passing; quick
-    /// replies stay free of the extra label.
-    nonisolated static let elapsedAfter = 3
+    /// The SwiftUI content of the working indicator or the card.
+    private var hosted: NSView?
+    /// What the working indicator says while it shows.
+    private var workingStatus: WorkingStatus?
 
     init(level: NSWindow.Level) {
         panel = NSPanel(
@@ -121,104 +114,30 @@ final class Overlay: NSObject {
 
     // MARK: - Working
 
-    /// While a suggestion is being written: a short row of accent pixels at
-    /// the caret, pulsing left to right where the ghost text will appear.
-    func showWorking(caret: CGRect?, input: CGRect, fontSize: CGFloat, offset: CGPoint = .zero) {
+    /// While a suggestion is being made: a capsule above the input box, at
+    /// its left edge where a rewrite's card appears. `started` keeps the
+    /// seconds counting from the hotkey when it moves or changes step.
+    func showWorking(input: CGRect, step: WorkingStatus.Step = .writing, started: Date = Date()) {
         reset()
         label.isHidden = true
-        let count = 6
-        let pixel = max(3, (fontSize * 0.26).rounded())
-        let gap = (pixel * 0.75).rounded()
-        let height = max(pixel * 3, fontSize + 4)
-        place(Self.workingFrame(caret: caret, input: input, fontSize: fontSize, offset: offset), shadow: false)
-
-        // At rest the pixels fade out to the right like the ghost text in the
-        // app icon. Unless the user reduces motion, a slow wave lights each
-        // in turn: quiet enough to sit in someone else's chat window.
-        let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let start = CACurrentMediaTime()
-        for index in 0..<count {
-            let dot = CALayer()
-            dot.backgroundColor = Theme.accentNS.cgColor
-            dot.frame = CGRect(x: CGFloat(index) * (pixel + gap), y: (height - pixel) / 2, width: pixel, height: pixel)
-            let rest = Float(1 - 0.8 * Double(index) / Double(count - 1))
-            dot.opacity = rest
-            if animate {
-                let low = NSNumber(value: rest * 0.3)
-                let pulse = CAKeyframeAnimation(keyPath: "opacity")
-                pulse.values = [low, low, 1, 1, low, low]
-                pulse.keyTimes = [0, 0.05, 0.15, 0.25, 0.65, 1]
-                pulse.timingFunctions = Array(repeating: CAMediaTimingFunction(controlPoints: 0.165, 0.84, 0.44, 1), count: 5)
-                pulse.duration = 1.6
-                pulse.repeatCount = .infinity
-                pulse.beginTime = start + Double(index) * 0.12
-                dot.add(pulse, forKey: "pulse")
-            }
-            container.layer?.addSublayer(dot)
-            decorations.append(dot)
-        }
-        working = (Date(), fontSize, CGFloat(count) * pixel + CGFloat(count - 1) * gap)
-        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showElapsed() }
-        }
+        let status = WorkingStatus(step: step, started: started)
+        workingStatus = status
+        host(WorkingCapsule(status: status), in: Self.onScreen(Self.workingFrame(input: input)))
     }
 
-    /// Past a few seconds, the seconds so far in a small chip beside the pixels.
-    func showElapsed(at now: Date = Date()) {
-        guard let working, panel.isVisible else { return }
-        let seconds = Int(now.timeIntervalSince(working.started))
-        guard let text = Self.elapsedText(seconds: seconds) else { return }
-        let font = NSFont.monospacedDigitSystemFont(ofSize: max(10, working.fontSize - 2), weight: .medium)
-        label.attributedStringValue = NSAttributedString(string: text, attributes: [
-            .font: font, .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        let fit = label.sizeThatFits(NSSize(width: 200, height: CGFloat.greatestFiniteMagnitude))
-        let height = container.bounds.height
-        let chip = CGRect(x: working.pixelsWidth + 6, y: max(0, (height - ceil(fit.height) - 2) / 2),
-                          width: ceil(fit.width) + 10, height: min(height, ceil(fit.height) + 2))
-        if elapsedChip == nil {
-            let layer = CALayer()
-            layer.cornerRadius = chip.height / 2
-            container.effectiveAppearance.performAsCurrentDrawingAppearance {
-                layer.backgroundColor = Theme.surfaceNS.withAlphaComponent(0.92).cgColor
-            }
-            container.layer?.addSublayer(layer)
-            decorations.append(layer)
-            elapsedChip = layer
-        }
-        elapsedChip?.frame = chip
-        label.isHidden = false
-        label.frame = chip.insetBy(dx: 3, dy: 1)
-        var frame = panel.frame
-        frame.size.width = chip.maxX
-        panel.setFrame(frame, display: true)
-        container.frame.size.width = chip.maxX
+    /// The step the shown working capsule says, without moving it.
+    func updateWorking(_ step: WorkingStatus.Step) {
+        workingStatus?.step = step
     }
 
-    /// "8s" once the work has run `elapsedAfter` seconds; nil before.
-    nonisolated static func elapsedText(seconds: Int) -> String? {
-        seconds >= elapsedAfter ? "\(seconds)s" : nil
-    }
-
-    private func stopElapsed() {
-        elapsedTimer?.invalidate()
-        elapsedTimer = nil
-        working = nil
-        elapsedChip = nil
-    }
-
-    /// On the caret's row. Some apps report the caret of an empty input
-    /// above the box; then the box's middle is the row, as
-    /// it is for a one-line input.
-    static func workingFrame(caret: CGRect?, input: CGRect, fontSize: CGFloat, offset: CGPoint = .zero) -> CGRect {
-        let pixel = max(3, (fontSize * 0.26).rounded())
-        let gap = (pixel * 0.75).rounded()
-        let width = 6 * pixel + 5 * gap
-        let height = max(pixel * 3, fontSize + 4)
-        let row = caret.map(\.midY).flatMap { input.minY...input.maxY ~= $0 ? $0 : nil } ?? input.midY
-        var y = row - height / 2 + offset.y
-        if height <= input.height - 2 { y = min(max(y, input.minY + 1), input.maxY - 1 - height) }
-        return CGRect(x: (caret?.minX ?? (input.minX + 2)) + 3 + offset.x, y: y, width: width, height: height)
+    /// The panel for the capsule at its longest, its bottom-left corner the
+    /// capsule's own, 8 points above the input box.
+    static func workingFrame(input: CGRect) -> CGRect {
+        let longest = WorkingStatus(step: .reading, started: Date().addingTimeInterval(-99))
+        let size = NSHostingView(rootView: LocalizedContent { WorkingCapsule(status: longest) }).fittingSize
+        let inset = WorkingCapsule.shadowInset
+        return CGRect(x: input.minX - inset, y: input.minY - size.height + inset - 8,
+                      width: size.width, height: size.height)
     }
 
     // MARK: - Card
@@ -233,76 +152,64 @@ final class Overlay: NSObject {
     }
 
     /// A suggestion that cannot be ghost text (a rewrite of what was typed,
-    /// or too long for one line): a paper card above the input. `footer`
-    /// replaces the usual keys line.
-    func showBubble(_ text: String, notes: [String], input: CGRect, fontSize: CGFloat, rewrite: Bool, footer: String? = nil) {
+    /// or too long for the input box): a card above the input. `copyOnly`
+    /// is for a draft that may not have been read whole: Tab then copies.
+    func showBubble(_ text: String, notes: [String], input: CGRect, fontSize: CGFloat, rewrite: Bool, copyOnly: Bool = false) {
         reset()
+        label.isHidden = true
         let (shown, length) = Self.preview(text)
-        let body = NSMutableAttributedString(string: shown, attributes: [
-            .font: NSFont.systemFont(ofSize: fontSize + 0.5),
-            .foregroundColor: Theme.inkNS,
-            .paragraphStyle: Self.lineSpacing(3),
-        ])
-        if !notes.isEmpty {
-            body.append(NSAttributedString(string: "\n⚠︎ " + notes.joined(separator: "；"), attributes: [
-                .font: NSFont.systemFont(ofSize: max(10, fontSize - 2)),
-                .foregroundColor: Theme.warnNS,
-                .paragraphStyle: Self.spacingBefore(6),
-            ]))
+        let remarks = [length, copyOnly ? L10n.tr("草稿可能没读全，按 Tab 只复制，不替换", "The draft may not have been read in full: Tab copies instead of replacing") : nil]
+        let apply = copyOnly ? L10n.tr("复制", "Copy") : rewrite ? L10n.tr("替换输入框", "Replace input") : L10n.tr("填入", "Apply")
+        let remark = remarks.compactMap { $0 }.joined(separator: "\n")
+        let card = SuggestionCard(text: shown, notes: notes, lengthNote: remark.isEmpty ? nil : remark,
+                                  keys: [("Tab", apply), ("Esc", L10n.tr("取消", "Cancel"))],
+                                  fontSize: fontSize, maxWidth: min(max(input.width, 280), 520))
+        let size = NSHostingView(rootView: LocalizedContent { card }).fittingSize
+        let inset = SuggestionCard.shadowInset
+        // The card's top-left above the input box; the panel adds room for the shadow.
+        let cardFrame = CGRect(x: input.minX, y: input.minY - (size.height - 2 * inset) - 8,
+                               width: size.width - 2 * inset, height: size.height - 2 * inset)
+        host(card, in: Self.onScreen(cardFrame.insetBy(dx: -inset, dy: -inset)))
+    }
+
+    /// `frame` (accessibility coordinates) moved inside the visible area of
+    /// the screen it is on, so a card near an edge is not cut off.
+    static func onScreen(_ frame: CGRect) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let visible = NSScreen.screens.map { screen -> CGRect in
+            let f = screen.visibleFrame
+            return CGRect(x: f.minX, y: primaryHeight - f.maxY, width: f.width, height: f.height)
         }
-        if let length {
-            body.append(NSAttributedString(string: "\n" + length, attributes: [
-                .font: NSFont.systemFont(ofSize: max(10, fontSize - 2)),
-                .foregroundColor: NSColor.secondaryLabelColor,
-                .paragraphStyle: Self.spacingBefore(6),
-            ]))
-        }
-        let keys = footer ?? (rewrite ? L10n.tr("TAB 替换输入框  ·  ESC 取消", "TAB Replace input  ·  ESC Cancel") : L10n.tr("TAB 填入  ·  ESC 取消", "TAB Apply  ·  ESC Cancel"))
-        body.append(NSAttributedString(string: "\n" + keys, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .kern: 0.6,
-            .paragraphStyle: Self.spacingBefore(8),
-        ]))
-        let frame = layout(body, maxWidth: min(max(input.width, 280), 560), padX: 14, padY: 11, leading: 0, above: input)
-        paint { layer in
-            layer.backgroundColor = Theme.surfaceNS.cgColor
-            layer.borderColor = Theme.hairlineNS.cgColor
-            layer.borderWidth = 1
-            layer.cornerRadius = 10
-        }
-        place(frame, shadow: true)
+        guard let screen = visible.first(where: { $0.intersects(frame) }) else { return frame }
+        var fitted = frame
+        fitted.origin.x = min(max(frame.minX, screen.minX), max(screen.minX, screen.maxX - frame.width))
+        fitted.origin.y = max(frame.minY, screen.minY)
+        return fitted
+    }
+
+    /// Shows `view` filling a panel at `frame` (accessibility coordinates).
+    private func host<Content: View>(_ view: Content, in frame: CGRect) {
+        let hosting = NSHostingView(rootView: LocalizedContent { view })
+        place(frame, shadow: false)
+        hosting.frame = container.bounds
+        hosting.autoresizingMask = [.width, .height]
+        container.addSubview(hosting)
+        hosted = hosting
     }
 
     // MARK: - Status
 
-    /// A short status above the input box: an ink pill with a small square
-    /// marker, amber for problems. nil duration keeps it until hidden.
+    /// A short status above the input box, on a card like the suggestion's,
+    /// with an amber sign for problems. nil duration keeps it until hidden.
     func showToast(_ text: String, input: CGRect, duration: TimeInterval?, kind: ToastKind = .info) {
         reset()
-        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let body = NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: Self.lineSpacing(2),
-        ])
-        let marker: CGFloat = 6
-        let leading = marker + 8
-        let frame = layout(body, maxWidth: 460, padX: 11, padY: 7, leading: leading, above: input)
-        container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.94).cgColor
-        container.layer?.cornerRadius = 8
-        place(frame, shadow: true)
-
-        let square = CALayer()
-        square.backgroundColor = kind == .warning
-            ? NSColor(srgbRed: 0.96, green: 0.66, blue: 0.36, alpha: 1).cgColor
-            : NSColor(white: 1, alpha: 0.5).cgColor
-        // Centred on the first line (layer origin is bottom-left).
-        let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
-        square.frame = CGRect(x: 11, y: frame.height - 7 - lineHeight / 2 - marker / 2, width: marker, height: marker)
-        container.layer?.addSublayer(square)
-        decorations.append(square)
-
+        label.isHidden = true
+        let toast = StatusToast(text: text, warning: kind == .warning)
+        let size = NSHostingView(rootView: LocalizedContent { toast }).fittingSize
+        let inset = StatusToast.shadowInset
+        let frame = CGRect(x: input.minX - inset, y: input.minY - (size.height - 2 * inset) - 8 - inset,
+                           width: size.width, height: size.height)
+        host(toast, in: Self.onScreen(frame))
         if let duration {
             perform(#selector(hideNow), with: nil, afterDelay: duration)
         }
@@ -311,7 +218,6 @@ final class Overlay: NSObject {
     func hide() {
         cancelAutoHide()
         stopFollowing()
-        stopElapsed()
         panel.orderOut(nil)
     }
 
@@ -420,6 +326,14 @@ final class Overlay: NSObject {
     /// What the overlay currently shows, as an image, for reviewing its look
     /// without capturing the screen.
     func snapshot(scale: CGFloat = 2) -> NSImage? {
+        if let hosted {
+            hosted.layoutSubtreeIfNeeded()
+            guard let rep = hosted.bitmapImageRepForCachingDisplay(in: hosted.bounds) else { return nil }
+            hosted.cacheDisplay(in: hosted.bounds, to: rep)
+            let image = NSImage(size: hosted.bounds.size)
+            image.addRepresentation(rep)
+            return image
+        }
         container.layoutSubtreeIfNeeded()
         container.displayIfNeeded()
         guard let layer = container.layer else { return nil }
@@ -450,7 +364,6 @@ final class Overlay: NSObject {
 
     @objc private func hideNow() {
         stopFollowing()
-        stopElapsed()
         panel.orderOut(nil)
     }
 
@@ -461,27 +374,11 @@ final class Overlay: NSObject {
     /// Clears what the previous mode drew.
     private func reset() {
         cancelAutoHide()
-        stopElapsed()
-        decorations.forEach { $0.removeFromSuperlayer() }
-        decorations.removeAll()
+        hosted?.removeFromSuperview()
+        hosted = nil
+        workingStatus = nil
         label.isHidden = false
-        guard let layer = container.layer else { return }
-        layer.backgroundColor = NSColor.clear.cgColor
-        layer.borderWidth = 0
-        layer.cornerRadius = 0
-    }
-
-    /// Sizes the label for `body` and returns the panel frame above `input`.
-    private func layout(_ body: NSAttributedString, maxWidth: CGFloat, padX: CGFloat, padY: CGFloat,
-                        leading: CGFloat, above input: CGRect) -> CGRect {
-        let textWidth = maxWidth - padX * 2 - leading
-        label.attributedStringValue = body
-        label.preferredMaxLayoutWidth = textWidth
-        let fit = label.sizeThatFits(NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude))
-        let width = ceil(min(fit.width, textWidth)) + padX * 2 + leading
-        let height = ceil(fit.height) + padY * 2
-        label.frame = NSRect(x: padX + leading, y: padY, width: width - padX * 2 - leading, height: height - padY * 2)
-        return CGRect(x: input.minX, y: input.minY - height - 8, width: width, height: height)
+        container.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     /// Positions the panel (accessibility coordinates) and shows it.
@@ -490,23 +387,5 @@ final class Overlay: NSObject {
         panel.setFrame(Self.cocoaRect(fromAX: ax), display: false)
         container.frame = NSRect(x: 0, y: 0, width: ax.width, height: ax.height)
         panel.orderFrontRegardless()
-    }
-
-    /// Dynamic colours resolve against the panel's appearance.
-    private func paint(_ body: (CALayer) -> Void) {
-        guard let layer = container.layer else { return }
-        container.effectiveAppearance.performAsCurrentDrawingAppearance { body(layer) }
-    }
-
-    private static func lineSpacing(_ spacing: CGFloat) -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = spacing
-        return style
-    }
-
-    private static func spacingBefore(_ spacing: CGFloat) -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.paragraphSpacingBefore = spacing
-        return style
     }
 }

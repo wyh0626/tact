@@ -291,6 +291,19 @@ struct ScreenWaitingTests {
         #expect(await h.until { h.events.contains { $0.event == "dismissed" && $0.detail == "input_changed" } })
     }
 
+    @Test func escCancelsWhileItIsMade() async {
+        let h = Harness()
+        h.trigger()
+        #expect(await h.until { !h.engineCalls.isEmpty })
+        let esc = CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: true)!
+        #expect(h.assistant.handle(type: .keyDown, event: esc), "Esc is taken, not passed to the chat")
+        #expect(h.engineCalls.allSatisfy { $0.isCancelled })
+        #expect(SuggestionActivity.shared.kind == .none)
+        await h.gate.open()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        #expect(h.shown() == 0, "a cancelled request shows nothing")
+    }
+
     @Test func activityBelongsToTheRequestThatSetIt() {
         let activity = SuggestionActivity()
         activity.set(.generating, for: "old")

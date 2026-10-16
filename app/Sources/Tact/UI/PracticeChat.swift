@@ -113,7 +113,7 @@ final class PracticeChat: ObservableObject, ScreenSession {
         note = nil
         generation += 1
         let current = generation
-        overlay.showWorking(caret: nil, input: frame, fontSize: 13)
+        overlay.showWorking(input: frame)
         let payload = Self.payload(messages: messages, draft: draft)
         Task {
             let raw = await suggest(payload)

@@ -40,7 +40,10 @@ enum ChatOCR {
     }
 
     /// The typed text in `typing`, told from the app's hint by `isHint`.
+    /// `emptyStart` is where the app starts text in an empty box, in points
+    /// from the box's top left: the hint is hidden once the box has focus.
     static func composer(_ lines: [WeChatScreen.Line], in typing: CGRect, scale: CGFloat,
+                         emptyStart: CGPoint = CGPoint(x: 8, y: 8),
                          isHint: (String) -> Bool) -> Composer {
         let inside = WeChatScreen.joinFragments(lines.filter { typing.contains(CGPoint(x: $0.box.midX, y: $0.box.midY)) })
         let typed = inside.filter { !isHint($0.text) }
@@ -52,8 +55,8 @@ enum ChatOCR {
             anchor = CGRect(x: hint.minX, y: hint.minY, width: scale, height: hint.height)
         } else {
             let height = min(18 * scale, typing.height)
-            anchor = CGRect(x: min(typing.minX + 8 * scale, typing.maxX - scale),
-                            y: min(typing.minY + 8 * scale, typing.maxY - height), width: scale, height: height)
+            anchor = CGRect(x: min(typing.minX + emptyStart.x * scale, typing.maxX - scale),
+                            y: min(typing.minY + emptyStart.y * scale, typing.maxY - height), width: scale, height: height)
         }
         return Composer(draft: typed.map(\.text).reduce("") { WeChatScreen.joined($0, $1) }, anchor: anchor, hint: hint,
                         clipped: WeChatScreen.draftMayBeClipped(typed, in: typing))

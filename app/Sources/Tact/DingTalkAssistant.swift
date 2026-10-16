@@ -15,6 +15,9 @@ struct DingTalkAssistant: ScreenReader {
     var name: String { L10n.tr("钉钉", "DingTalk") }
     /// DingTalk's input font.
     let ghostFontSize: CGFloat = 14
+    /// Where DingTalk starts text in its empty input box, from the box's
+    /// accessibility frame: where its hint shows before the box has focus.
+    static let emptyStart = CGPoint(x: 20, y: 8)
 
     func look(_ image: CGImage, scale: CGFloat) throws -> ScreenLook<Context>? {
         guard let pixels = Pixels(image), let layout = DingTalkOCR.layout(pixels, scale: scale) else { return nil }
@@ -44,7 +47,7 @@ struct DingTalkAssistant: ScreenReader {
         // the hint of an empty box. DingTalk reports an empty box's caret at
         // the box's bottom, so its caret is not asked.
         let shown = ChatOCR.composer(try WeChatScreen.recognize(image, in: input), in: input, scale: scale,
-                                     isHint: DingTalkOCR.isHint)
+                                     emptyStart: Self.emptyStart, isHint: DingTalkOCR.isHint)
         let hint = reading.draft.isEmpty ? shown.hint : nil
         var typing = input
         typing.size.width = max(0, input.maxX - shown.anchor.minX)
