@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import Tact
@@ -45,5 +46,37 @@ struct BootstrapTests {
         let before = try Data(contentsOf: URL(fileURLWithPath: fixture.config))
         fixture.bootstrap()
         #expect(try Data(contentsOf: URL(fileURLWithPath: fixture.config)) == before)
+    }
+
+    /// A style file still holding a template an earlier version installed
+    /// takes the current one; an edited file is left alone.
+    @Test func anUneditedDefaultStyleTakesTheNewTemplate() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        try FileManager.default.createDirectory(at: fixture.state, withIntermediateDirectories: true)
+        let style = fixture.state.appendingPathComponent("style.md")
+        let old = Data("- 旧的默认模板".utf8)
+        let shipped = [SHA256.hash(data: old).map { String(format: "%02x", $0) }.joined(): "style.example.md"]
+        let refresh = { AppConfig.refreshUntouchedStyle(at: style.path, resources: fixture.resources, shipped: shipped, log: { _ in }) }
+
+        try old.write(to: style)
+        refresh()
+        #expect(try String(contentsOf: style, encoding: .utf8) == "偏好示例")
+
+        try Data("- 旧的默认模板\n- 我自己加的一条".utf8).write(to: style)
+        refresh()
+        #expect(try String(contentsOf: style, encoding: .utf8).contains("我自己加的一条"), "an edited file is never replaced")
+    }
+
+    /// The shipped list names templates the app bundles, and never the
+    /// current ones, which would replace themselves on every launch.
+    @Test func shippedStylesPointAtBundledTemplates() throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        for name in Set(AppConfig.shippedStyles.values) {
+            let current = try Data(contentsOf: repo.appendingPathComponent(name))
+            let digest = SHA256.hash(data: current).map { String(format: "%02x", $0) }.joined()
+            #expect(AppConfig.shippedStyles[digest] == nil, "\(name) as it is now must not be listed")
+        }
     }
 }

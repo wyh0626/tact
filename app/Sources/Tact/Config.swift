@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Settings the app reads from the "app" section of ~/.tact/config.json.
@@ -93,6 +94,34 @@ struct AppConfig {
             log("已创建配置：\(destination)")
         } catch {
             log("⚠️ 创建配置失败：\(error.localizedDescription)")
+        }
+    }
+
+    /// SHA-256 of each style template an earlier version installed, and the
+    /// template that replaces it. When a template changes, add the hash of
+    /// the version being replaced here.
+    static let shippedStyles: [String: String] = [
+        "3aecb024d712dbfeb57ccea9458a573a54438e9ae6c50cf7ffb18e8212af4e33": "style.example.md",
+        "7e11835a182c74bc887775a6120ab3af10ed55baa02d32251c839d4c5e2dc3af": "style.example.en.md",
+    ]
+
+    /// A style file nobody edited since an earlier version installed it
+    /// takes the current template in the same language, so better defaults
+    /// reach people who never changed theirs. An edited file is never touched.
+    static func refreshUntouchedStyle(at path: String = (directory as NSString).appendingPathComponent("style.md"),
+                                      resources: URL? = Bundle.main.resourceURL,
+                                      shipped: [String: String] = shippedStyles,
+                                      log: (String) -> Void = Log.info) {
+        guard let resources, let current = FileManager.default.contents(atPath: path) else { return }
+        let digest = SHA256.hash(data: current).map { String(format: "%02x", $0) }.joined()
+        guard let name = shipped[digest],
+              let template = FileManager.default.contents(atPath: resources.appendingPathComponent(name).path),
+              template != current else { return }
+        do {
+            try template.write(to: URL(fileURLWithPath: path), options: .atomic)
+            log("表达偏好还是默认内容，已换成新版默认模板")
+        } catch {
+            log("⚠️ 更新默认表达偏好失败：\(error.localizedDescription)")
         }
     }
 

@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Opened straight from the disk image: move first, before anything starts.
         if Relocation.offerMove() { return }
         AppConfig.bootstrapIfNeeded()
+        AppConfig.refreshUntouchedStyle()
         let (cfg, problem) = AppConfig.load()
         configProblem = problem
         if let problem = problem { Log.info("⚠️ \(problem)") }

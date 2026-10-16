@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -85,12 +86,12 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("unexpected message layout: %+v", out)
 	}
 	user := out[1].Content
-	for _, want := range []string{"会话：张三（私聊）", "张三：明天能上线吗？", "我（回复张三「明天能上线吗？」）：我看下", "李四（@我）", "我的意图：别承诺"} {
+	for _, want := range []string{"Chat: 张三 (direct message)", "张三: 明天能上线吗？", `Me (replying to 张三: "明天能上线吗？"): 我看下`, "李四 (@me)", "My intent: 别承诺"} {
 		if !strings.Contains(user, want) {
 			t.Fatalf("user prompt missing %q:\n%s", want, user)
 		}
 	}
-	if !strings.Contains(out[0].Content, "我的表达偏好：\n简短") {
+	if !strings.Contains(out[0].Content, "My writing preferences") || !strings.HasSuffix(out[0].Content, ":\n简短") {
 		t.Fatalf("style missing from system prompt")
 	}
 }
@@ -118,8 +119,8 @@ func TestBuildKeepsWhatChangesLast(t *testing.T) {
 		return out[0].Content + "\x00" + out[1].Content
 	}
 	a, b := at(1, ""), at(7, "别承诺")
-	timeLine := strings.Index(a, "现在时间：")
-	if timeLine < 0 || timeLine < strings.Index(a, "张三：明天能上线吗？") {
+	timeLine := strings.Index(a, "Current time:")
+	if timeLine < 0 || timeLine < strings.Index(a, "张三: 明天能上线吗？") {
 		t.Fatalf("the time must come after the history:\n%s", a)
 	}
 	if a[:timeLine] != b[:timeLine] {
@@ -130,15 +131,42 @@ func TestBuildKeepsWhatChangesLast(t *testing.T) {
 func TestLongDraftsAreKeptWholeAndShortOnesAreIntent(t *testing.T) {
 	chat := adapter.Chat{ID: "1", Title: "张三", Type: "private"}
 	short := Build(Input{Chat: chat, Intent: "婉拒，下周再说"})[1].Content
-	if !strings.Contains(short, "我的意图：婉拒，下周再说") || strings.Contains(short, "我的草稿") {
+	if !strings.Contains(short, "My intent: 婉拒，下周再说") || strings.Contains(short, "My draft") {
 		t.Fatalf("a few words are intent:\n%s", short)
 	}
 	draft := strings.Repeat("这个方案我看过了，整体没问题，但排期需要再确认一下。", 20)
 	long := Build(Input{Chat: chat, Intent: draft})[1].Content
-	if !strings.Contains(long, "我的草稿：\n"+draft+"\n") || !strings.Contains(long, "保留全部内容") || strings.Contains(long, "我的意图") {
+	if !strings.Contains(long, "My draft:\n"+draft+"\n") || !strings.Contains(long, "Keep all of its content") || strings.Contains(long, "My intent") {
 		t.Fatalf("a written-out draft is kept whole:\n%s", long)
 	}
 	if !IsLongDraft(strings.Repeat("字", LongDraftRunes)) || IsLongDraft(strings.Repeat("字", LongDraftRunes-1)) {
 		t.Fatal("long drafts start at LongDraftRunes")
+	}
+}
+
+// A Japanese or Korean chat must not be answered in Chinese because the
+// instructions or the user's style notes are written in Chinese.
+func TestTheReplyKeepsTheConversationsLanguage(t *testing.T) {
+	out := Build(Input{
+		Chat:     adapter.Chat{Title: "田中", Type: "private"},
+		Messages: []adapter.Message{{Sender: "田中", Text: "明日の会議は何時からですか？"}},
+		Intent:   "下午三点", Style: "- 简短直接", MaxMessageChars: 500,
+	})
+	system := out[0].Content
+	for _, want := range []string{
+		"write in the language the conversation is using",
+		"the reply still goes in the conversation's language",
+		"not the language these lines are written in",
+	} {
+		if !strings.Contains(system, want) {
+			t.Errorf("system prompt lacks %q", want)
+		}
+	}
+	core := strings.ReplaceAll(systemPrompt+screenInstructions, "翻译成日语", "")
+	if han := regexp.MustCompile(`\p{Han}`).FindString(core); han != "" {
+		t.Errorf("the instructions pull towards Chinese: found %q", han)
+	}
+	if !strings.Contains(out[1].Content, "conversation's language") {
+		t.Error("the intent note must point back to the language rule")
 	}
 }

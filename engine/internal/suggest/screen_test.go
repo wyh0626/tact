@@ -33,12 +33,12 @@ func TestScreenSuggestUsesTheMessagesItCarries(t *testing.T) {
 		t.Fatalf("a screen request must not touch the plugin: chats %d, history %d", fa.chatsHit, fa.historyCalls())
 	}
 	prompt := fm.last[1].Content
-	for _, want := range []string{"会话：周末球局（群聊）", "王五：周六上午打球吗？", "我：几点", "王五：九点，老地方", "我的意图：可以"} {
+	for _, want := range []string{"Chat: 周末球局 (group chat)", "王五: 周六上午打球吗？", "Me: 几点", "王五: 九点，老地方", "My intent: 可以"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	if strings.Count(prompt, "\n对方") != 0 {
+	if strings.Count(prompt, "\nThem") != 0 {
 		t.Fatalf("a message without text must be dropped:\n%s", prompt)
 	}
 
@@ -110,7 +110,7 @@ func TestPracticeSuggestionsAreRealButNotCounted(t *testing.T) {
 	if !resp.OK || resp.PlatformID != PracticePlatformID || resp.Suggestion == nil {
 		t.Fatalf("practice suggest = %+v", resp)
 	}
-	if !strings.Contains(fm.last[1].Content, "小林：周六晚上六点半") {
+	if !strings.Contains(fm.last[1].Content, "小林: 周六晚上六点半") {
 		t.Fatalf("practice prompt = %s", fm.last[1].Content)
 	}
 	for _, event := range []string{"shown", "accepted"} {

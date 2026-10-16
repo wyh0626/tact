@@ -125,7 +125,7 @@ func TestSuggestFromOCR(t *testing.T) {
 		t.Fatalf("suggestion not cleaned: %v", resp.Suggestion)
 	}
 	user := fm.last[1].Content
-	if !strings.Contains(user, "我的意图：还要测试，别承诺") || !strings.Contains(fm.last[0].Content, "简短直接") {
+	if !strings.Contains(user, "My intent: 还要测试，别承诺") || !strings.Contains(fm.last[0].Content, "简短直接") {
 		t.Fatalf("prompt missing intent or work style:\n%s\n%s", fm.last[0].Content, user)
 	}
 	data, _ := os.ReadFile(logPath)

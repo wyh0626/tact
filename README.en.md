@@ -27,7 +27,7 @@ With an empty input, Tact suggests a complete reply. Type a short intent such as
 
 The interface supports English and Simplified Chinese and follows your system language by default. Choose **System default**, **简体中文**, or **English** on the welcome screen or in **Settings → General → Language**. Changes apply immediately and persist across launches.
 
-The interface language does not overwrite your writing preferences or change the language of your real conversations. On a fresh English installation, the example style follows the conversation’s language. Existing style files are preserved; if yours asks for Chinese replies, edit it in **Writing style**. Plugin names, setup instructions, and external error details appear in the language supplied by the plugin or service.
+Replies follow the language of the conversation: Japanese in a Japanese chat, Korean in a Korean chat, even when you type your intent in another language. They switch only when you ask for a translation. The default writing style gives separate guidance for English (based on humanizer) and Chinese (based on humanizer-zh); a style file you never edited is updated to the new default, and an edited one is preserved. Plugin names, setup instructions, and external error details appear in the language supplied by the plugin or service.
 
 ## Chat apps
 
