@@ -31,10 +31,7 @@ fi
 step "打包 macOS 应用"
 "$REPO/scripts/build-app.sh"
 
-cat <<EOF
-
-完成。接下来：
-  1. 打开应用，跟着引导授权、选模型：open "$REPO/dist/Tact.app"
-  2. 想让权限在重新打包后保留，运行一次：$REPO/scripts/create-signing-identity.sh
-  3. 在终端里查看平台注册（可选，不执行插件）：$REPO/engine/bin/tactd platforms
-EOF
+printf '%s\n' "" "完成。接下来：" \
+  "  1. 打开应用，跟着引导授权、选模型：open \"$REPO/dist/Tact.app\"" \
+  "  2. 想让权限在重新打包后保留，运行一次：$REPO/scripts/create-signing-identity.sh" \
+  "  3. 在终端里查看平台注册（可选，不执行插件）：$REPO/engine/bin/tactd platforms"

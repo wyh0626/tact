@@ -38,11 +38,9 @@ case "$SIGNER" in
   fi
   ;;
 *)
-  cat <<MSG
-注意：应用不是用 Developer ID 签名的（${SIGNER:-临时签名}）。下载的人第一次打开会被拦下，
-要到「系统设置 → 隐私与安全性」点「仍要打开」；每次更新版本都要重新授予辅助功能和屏幕录制权限。
-发布给别人用的版本建议用临时签名打包，不要带上本机证书：TACT_SIGN_IDENTITY=- scripts/build-app.sh
-MSG
+  printf '%s\n' "注意：应用不是用 Developer ID 签名的（${SIGNER:-临时签名}）。下载的人第一次打开会被拦下，" \
+    "要到「系统设置 → 隐私与安全性」点「仍要打开」；每次更新版本都要重新授予辅助功能和屏幕录制权限。" \
+    "发布给别人用的版本建议用临时签名打包，不要带上本机证书：TACT_SIGN_IDENTITY=- scripts/build-app.sh"
   ;;
 esac
 

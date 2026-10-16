@@ -102,10 +102,12 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
-cat > "$APP/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
+# Written from a variable, not a here-document: Homebrew's bash 5.3 passes a
+# here-document through a pipe, and when macOS shrinks pipe buffers under load
+# the write blocks for good.
+PLIST="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
 <dict>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>Tact</string>
@@ -124,8 +126,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>SUFeedURL</key><string>$UPDATE_FEED</string>
   <key>SUPublicEDKey</key><string>$UPDATE_KEY</string>
 </dict>
-</plist>
-EOF
+</plist>"
+printf '%s\n' "$PLIST" > "$APP/Contents/Info.plist"
 
 step "签名"
 # macOS ties Accessibility and Screen Recording grants to the signature. An ad
@@ -153,13 +155,10 @@ if ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID.engine" "$APP/Contents
    ! codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Updater.app" ||
    ! codesign "${SIGN_FLAGS[@]}" "$SPARKLE" ||
    ! codesign "${SIGN_FLAGS[@]}" --identifier "$BUNDLE_ID" "$APP"; then
-  cat >&2 <<MSG
-
-签名失败，dist/ 里原来的应用没有改动。
-codesign 第一次使用钥匙串里的证书时，macOS 要弹窗请你允许；在后台运行时弹不出来就会失败
-（errSecInternalComponent）。请在「终端」应用里运行这个脚本，弹窗时输入登录密码并点「始终允许」。
-只想先用临时签名打包：TACT_SIGN_IDENTITY=- $0
-MSG
+  printf '%s\n' "" "签名失败，dist/ 里原来的应用没有改动。" \
+    "codesign 第一次使用钥匙串里的证书时，macOS 要弹窗请你允许；在后台运行时弹不出来就会失败" \
+    "（errSecInternalComponent）。请在「终端」应用里运行这个脚本，弹窗时输入登录密码并点「始终允许」。" \
+    "只想先用临时签名打包：TACT_SIGN_IDENTITY=- $0" >&2
   exit 1
 fi
 codesign --verify --strict --deep "$APP"

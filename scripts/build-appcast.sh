@@ -29,11 +29,8 @@ RELEASES="${FEED%/latest/download/appcast.xml}"
 [ "$RELEASES" != "$FEED" ] || { echo "SUFeedURL 不是 GitHub Release 的地址：$FEED"; exit 1; }
 
 keychain_hint() {
-  cat >&2 <<MSG
-$1
-Sparkle 的工具第一次读取钥匙串里的更新密钥时，macOS 要弹窗请你允许；在后台运行时弹不出来就会失败。
-请在「终端」应用里运行 $0，弹窗时点「始终允许」。
-MSG
+  printf '%s\n' "$1" "Sparkle 的工具第一次读取钥匙串里的更新密钥时，macOS 要弹窗请你允许；在后台运行时弹不出来就会失败。" \
+    "请在「终端」应用里运行 $0，弹窗时点「始终允许」。" >&2
   exit 1
 }
 # An update signed with any other key is refused by every installed copy.
@@ -52,9 +49,11 @@ fi
 HARDWARE=""
 [ "$ARCH" != "arm64" ] || HARDWARE="      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>"
 
-cat > "$OUT" <<EOF
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+# Written from a variable, not a here-document: Homebrew's bash 5.3 passes a
+# here-document through a pipe, and when macOS shrinks pipe buffers under load
+# the write blocks for good.
+FEED_XML="<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<rss version=\"2.0\" xmlns:sparkle=\"http://www.andymatuschak.org/xml-namespaces/sparkle\">
   <channel>
     <title>Tact</title>
     <item>
@@ -66,10 +65,10 @@ cat > "$OUT" <<EOF
 $HARDWARE
       <sparkle:fullReleaseNotesLink>$RELEASES</sparkle:fullReleaseNotesLink>
 $DESCRIPTION
-      <enclosure url="$RELEASES/download/v$VERSION/$(basename "$DMG")" $SIGNATURE type="application/octet-stream"/>
+      <enclosure url=\"$RELEASES/download/v$VERSION/$(basename "$DMG")\" $SIGNATURE type=\"application/octet-stream\"/>
     </item>
   </channel>
-</rss>
-EOF
+</rss>"
+printf '%s\n' "$FEED_XML" > "$OUT"
 xmllint --noout "$OUT"
 printf '\n完成：%s（%s，build %s）\n和 DMG 一起上传到 GitHub Release v%s。\n' "$OUT" "$VERSION" "$BUILD" "$VERSION"

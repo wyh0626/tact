@@ -20,18 +20,9 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-cat > "$WORK/cert.cnf" <<EOF
-[req]
-distinguished_name = dn
-x509_extensions = ext
-prompt = no
-[dn]
-CN = $NAME
-[ext]
-basicConstraints = critical, CA:false
-keyUsage = critical, digitalSignature
-extendedKeyUsage = critical, codeSigning
-EOF
+printf '%s\n' "[req]" "distinguished_name = dn" "x509_extensions = ext" "prompt = no" "[dn]" "CN = $NAME" "[ext]" \
+  "basicConstraints = critical, CA:false" "keyUsage = critical, digitalSignature" \
+  "extendedKeyUsage = critical, codeSigning" > "$WORK/cert.cnf"
 
 "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 -sha256 \
   -keyout "$WORK/key.pem" -out "$WORK/cert.pem" -config "$WORK/cert.cnf" 2>/dev/null
